@@ -13,6 +13,7 @@ const moveButtons = document.querySelectorAll(".movement button");
 const doorListEl = document.getElementById("door-list");
 const warpButton = document.getElementById("warp-button");
 const warpNoteEl = document.getElementById("warp-note");
+const commandListEl = document.getElementById("command-list");
 const hpEl = document.getElementById("stat-hp");
 const attackBonusEl = document.getElementById("stat-atk");
 const acEl = document.getElementById("stat-ac");
@@ -45,6 +46,39 @@ const ABILITY_LABELS = {
   wis: "WIS",
   cha: "CHA",
 };
+
+const COMMAND_REFERENCE = [
+  {
+    label: "/attack <target>",
+    prefill: "/attack ",
+    description: "Strike a creature or rival sharing your room.",
+  },
+  {
+    label: "/equip <weapon>",
+    prefill: "/equip ",
+    description: "Swap to a weapon from your inventory (also works with /wield).",
+  },
+  {
+    label: "/search",
+    prefill: "/search",
+    description: "Examine the area for hidden loot or clues (alias /investigate).",
+  },
+  {
+    label: "/cast <spell> [target]",
+    prefill: "/cast ",
+    description: "Invoke a known spell or class ability, optionally naming a target.",
+  },
+  {
+    label: "/spells",
+    prefill: "/spells",
+    description: "List the spells and abilities you currently know (alias /abilities).",
+  },
+  {
+    label: "/loot <loot-id>",
+    prefill: "/loot ",
+    description: "Claim treasure on the ground by its tag (aliases /take, /pickup).",
+  },
+];
 
 function addMessage(text, cssClass) {
   const div = document.createElement("div");
@@ -129,6 +163,8 @@ chatForm.addEventListener("submit", (evt) => {
   chatInput.value = "";
 });
 
+renderCommandReference();
+
 function renderCharacterPanel(character) {
   if (charSummaryEl) {
     const summaryParts = [];
@@ -190,6 +226,38 @@ function renderMovementControls(exits = {}) {
     } else {
       btn.removeAttribute("title");
     }
+  });
+}
+
+function renderCommandReference() {
+  if (!commandListEl) return;
+  commandListEl.innerHTML = "";
+  COMMAND_REFERENCE.forEach((entry) => {
+    const li = document.createElement("li");
+    li.className = "command-item";
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "command-chip";
+    button.textContent = entry.label;
+    button.addEventListener("click", () => {
+      if (!chatInput) return;
+      const value = entry.prefill || entry.label;
+      chatInput.value = value;
+      chatInput.focus();
+      const caret = chatInput.value.length;
+      chatInput.setSelectionRange(caret, caret);
+    });
+    li.appendChild(button);
+
+    if (entry.description) {
+      const desc = document.createElement("span");
+      desc.className = "command-desc";
+      desc.textContent = entry.description;
+      li.appendChild(desc);
+    }
+
+    commandListEl.appendChild(li);
   });
 }
 
