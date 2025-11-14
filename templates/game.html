@@ -1,100 +1,150 @@
 <!doctype html>
 <html>
   <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MUD MVP - Game</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   </head>
   <body class="game-body">
-    <header>
-      <div>Logged in as: <strong>{{ username }}</strong></div>
-      <div><a href="{{ url_for('logout') }}">Logout</a></div>
-    </header>
-
-    <main class="game-layout">
-      <section class="room-panel">
-        <h2 id="room-name">Loading...</h2>
-        <p id="room-desc"></p>
-        <p id="coords"></p>
-
-        <h3>Players here</h3>
-        <ul id="players-list"></ul>
-
-        <h3>Creatures lurking</h3>
-        <ul id="mob-list"></ul>
-
-        <h3>Loot on the ground</h3>
-        <ul id="loot-list"></ul>
-
-        <h3>Move</h3>
-        <div class="movement">
-          <button data-dir="north">North</button><br>
-          <button data-dir="west">West</button>
-          <button data-dir="east">East</button><br>
-          <button data-dir="south">South</button>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="header-title">
+          <div class="brand-mark">Back to MUD</div>
+          <div class="header-meta">Logged in as <strong>{{ username }}</strong></div>
         </div>
-
-        <h3>Your character</h3>
-        <div class="character-card">
-          <p><strong>Identity:</strong> <span id="char-summary">--</span></p>
-          <p><strong>HP:</strong> <span id="stat-hp">--</span></p>
-          <p><strong>Armor Class:</strong> <span id="stat-ac">--</span></p>
-          <p><strong>Proficiency:</strong> <span id="stat-prof">--</span></p>
-          <p><strong>Weapon:</strong> <span id="stat-weapon">--</span></p>
-          <p><strong>Attack Bonus:</strong> <span id="stat-atk">--</span></p>
-          <p><strong>Gold:</strong> <span id="stat-gold">0</span></p>
-          <p><strong>Experience:</strong> <span id="stat-xp">0</span></p>
-          <table class="ability-table">
-            <thead>
-              <tr>
-                <th>Ability</th>
-                <th>Score</th>
-                <th>Mod</th>
-              </tr>
-            </thead>
-            <tbody id="ability-table-body"></tbody>
-          </table>
-          <div class="weapon-panel">
-            <h4>Weapons</h4>
-            <form id="equip-form">
-              <select id="weapon-select"></select>
-              <button type="submit">Equip</button>
-            </form>
-            <ul id="weapon-list"></ul>
-          </div>
-          <div class="spell-panel">
-            <h4>Spells &amp; Abilities</h4>
-            <form id="cast-form">
-              <select id="spell-select"></select>
-              <input type="text" id="spell-target" placeholder="Target (optional)">
-              <button type="submit">Cast</button>
-            </form>
-            <ul id="spell-list"></ul>
-          </div>
-          <div class="item-panel">
-            <h4>Equipment &amp; Trophies</h4>
-            <ul id="item-list"></ul>
-          </div>
-          <div class="effects-panel">
-            <h4>Active Effects</h4>
-            <ul id="effects-list"></ul>
-          </div>
+        <div class="header-actions">
+          <a class="ghost-button" href="{{ url_for('logout') }}">Logout</a>
         </div>
-        <p class="combat-tip">
-          Ready your gear with the panel or <code>/equip &lt;weapon&gt;</code>, then strike with <code>/attack &lt;target&gt;</code>—creatures and rivals alike.
-          Invoke <code>/cast &lt;spell&gt; [target]</code> or use the spell panel, gather spoils with <code>/loot &lt;loot-id&gt;</code>, and list your toolkit any time with <code>/spells</code>.
-        </p>
-      </section>
+      </header>
 
-      <section class="chat-panel">
-        <h2>Room chat</h2>
-        <div id="messages"></div>
-        <form id="chat-form">
-          <input type="text" id="chat-input" placeholder="Say something or /attack &lt;name&gt;, /cast &lt;spell&gt;..." autocomplete="off">
-          <button type="submit">Send</button>
-        </form>
-      </section>
-    </main>
+      <main class="game-layout">
+        <section class="panel room-panel">
+          <div class="panel-hero">
+            <div class="hero-copy">
+              <h1 id="room-name">Loading...</h1>
+              <p id="room-desc" class="room-desc"></p>
+            </div>
+            <div class="hero-meta">
+              <span id="coords" class="coords-badge"></span>
+            </div>
+          </div>
+
+          <div class="room-data-grid">
+            <div class="room-sidebar">
+              <div class="panel-section">
+                <h3>Players here</h3>
+                <ul id="players-list" class="tag-list"></ul>
+              </div>
+
+              <div class="panel-section">
+                <h3>Creatures lurking</h3>
+                <ul id="mob-list" class="action-list"></ul>
+              </div>
+
+              <div class="panel-section">
+                <h3>Loot on the ground</h3>
+                <ul id="loot-list" class="action-list"></ul>
+              </div>
+
+              <div class="panel-section movement-panel">
+                <h3>Move</h3>
+                <div class="movement movement-grid">
+                  <button data-dir="north">North</button>
+                  <button data-dir="west">West</button>
+                  <button data-dir="east">East</button>
+                  <button data-dir="south">South</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="character-column">
+              <div class="character-card">
+                <h3>Your character</h3>
+                <div class="character-stats">
+                  <p><strong>Identity:</strong> <span id="char-summary">--</span></p>
+                  <p><strong>HP:</strong> <span id="stat-hp">--</span></p>
+                  <p><strong>Armor Class:</strong> <span id="stat-ac">--</span></p>
+                  <p><strong>Proficiency:</strong> <span id="stat-prof">--</span></p>
+                  <p><strong>Weapon:</strong> <span id="stat-weapon">--</span></p>
+                  <p><strong>Attack Bonus:</strong> <span id="stat-atk">--</span></p>
+                  <p><strong>Gold:</strong> <span id="stat-gold">0</span></p>
+                  <p><strong>Experience:</strong> <span id="stat-xp">0</span></p>
+                </div>
+
+                <table class="ability-table">
+                  <thead>
+                    <tr>
+                      <th>Ability</th>
+                      <th>Score</th>
+                      <th>Mod</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ability-table-body"></tbody>
+                </table>
+
+                <div class="card-subsection weapon-panel">
+                  <div class="subsection-header">
+                    <h4>Weapons</h4>
+                  </div>
+                  <form id="equip-form" class="inline-form">
+                    <select id="weapon-select"></select>
+                    <button type="submit">Equip</button>
+                  </form>
+                  <ul id="weapon-list" class="flat-list"></ul>
+                </div>
+
+                <div class="card-subsection spell-panel">
+                  <div class="subsection-header">
+                    <h4>Spells &amp; Abilities</h4>
+                  </div>
+                  <form id="cast-form" class="inline-form">
+                    <select id="spell-select"></select>
+                    <input type="text" id="spell-target" placeholder="Target (optional)">
+                    <button type="submit">Cast</button>
+                  </form>
+                  <ul id="spell-list" class="flat-list"></ul>
+                </div>
+
+                <div class="card-subsection item-panel">
+                  <div class="subsection-header">
+                    <h4>Equipment &amp; Trophies</h4>
+                  </div>
+                  <ul id="item-list" class="flat-list"></ul>
+                </div>
+
+                <div class="card-subsection effects-panel">
+                  <div class="subsection-header">
+                    <h4>Active Effects</h4>
+                  </div>
+                  <ul id="effects-list" class="flat-list"></ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p class="combat-tip">
+            Ready your gear with the panel or <code>/equip &lt;weapon&gt;</code>, then strike with <code>/attack &lt;target&gt;</code>—creatures and rivals alike.
+            Invoke <code>/cast &lt;spell&gt; [target]</code> or use the spell panel, gather spoils with <code>/loot &lt;loot-id&gt;</code>, and list your toolkit any time with <code>/spells</code>.
+          </p>
+        </section>
+
+        <section class="panel chat-panel">
+          <div class="panel-header">
+            <h2>Room chat</h2>
+            <p class="panel-subtitle">Strategize with allies, taunt rivals, and keep tabs on the battlefield.</p>
+          </div>
+          <div class="chat-body">
+            <div id="messages"></div>
+            <form id="chat-form" class="chat-form">
+              <input type="text" id="chat-input" placeholder="Say something or /attack &lt;name&gt;, /cast &lt;spell&gt;..." autocomplete="off">
+              <button type="submit">Send</button>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
 
     <script>
       const USERNAME = "{{ username }}";

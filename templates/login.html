@@ -1,12 +1,17 @@
 <!doctype html>
 <html>
   <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MUD MVP - Login</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   </head>
   <body class="login-body">
     <div class="login-box">
-      <h1>MUD MVP</h1>
+      <div class="login-brand">
+        <span class="brand-mark">Back to MUD</span>
+        <p class="login-subtitle">Return to the realm or forge a new legend.</p>
+      </div>
 
       {% with messages = get_flashed_messages() %}
         {% if messages %}
@@ -18,7 +23,7 @@
         {% endif %}
       {% endwith %}
 
-      <form method="post">
+      <form method="post" class="login-form">
         <label>Username</label>
         <input type="text" name="username" required>
 
