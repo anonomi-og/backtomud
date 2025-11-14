@@ -1,3 +1,4 @@
+import json
 import os
 import random
 import sqlite3
@@ -61,7 +62,22 @@ START_Y = 2  # central tile
 ABILITY_KEYS = ("str", "dex", "con", "int", "wis", "cha")
 DEFAULT_RACE = "Human"
 DEFAULT_CLASS = "Fighter"
+DEFAULT_WEAPON_KEY = "unarmed"
 PROFICIENCY_BONUS = 2  # SRD level 1 characters
+
+WEAPONS = {
+    "unarmed": {"name": "Unarmed Strike", "dice": (1, 1), "ability": "str", "damage_type": "bludgeoning"},
+    "longsword": {"name": "Longsword", "dice": (1, 8), "ability": "str", "damage_type": "slashing"},
+    "battleaxe": {"name": "Battleaxe", "dice": (1, 8), "ability": "str", "damage_type": "slashing"},
+    "spear": {"name": "Spear", "dice": (1, 6), "ability": "str", "damage_type": "piercing"},
+    "shortsword": {"name": "Shortsword", "dice": (1, 6), "ability": "dex", "damage_type": "piercing"},
+    "dagger": {"name": "Dagger", "dice": (1, 4), "ability": "dex", "damage_type": "piercing"},
+    "shortbow": {"name": "Shortbow", "dice": (1, 6), "ability": "dex", "damage_type": "piercing"},
+    "mace": {"name": "Mace", "dice": (1, 6), "ability": "str", "damage_type": "bludgeoning"},
+    "warhammer": {"name": "Warhammer", "dice": (1, 8), "ability": "str", "damage_type": "bludgeoning"},
+    "arcane_bolt": {"name": "Arcane Bolt", "dice": (1, 8), "ability": "int", "damage_type": "force"},
+    "sacred_flame": {"name": "Sacred Flame", "dice": (1, 8), "ability": "wis", "damage_type": "radiant"},
+}
 
 RACES = {
     "Human": {"modifiers": {ability: 1 for ability in ABILITY_KEYS}},
@@ -75,25 +91,25 @@ CLASSES = {
         "hit_die": 10,
         "primary_ability": "str",
         "armor_bonus": 2,
-        "weapon": {"name": "Longsword", "dice": (1, 8), "ability": "str", "damage_type": "slashing"},
+        "starting_weapons": ["longsword", "battleaxe", "spear", "dagger"],
     },
     "Rogue": {
         "hit_die": 8,
         "primary_ability": "dex",
         "armor_bonus": 1,
-        "weapon": {"name": "Shortsword", "dice": (1, 6), "ability": "dex", "damage_type": "piercing"},
+        "starting_weapons": ["shortsword", "dagger", "shortbow"],
     },
     "Wizard": {
         "hit_die": 6,
         "primary_ability": "int",
         "armor_bonus": 0,
-        "weapon": {"name": "Arcane Bolt", "dice": (1, 8), "ability": "int", "damage_type": "force"},
+        "starting_weapons": ["arcane_bolt", "dagger"],
     },
     "Cleric": {
         "hit_die": 8,
         "primary_ability": "wis",
         "armor_bonus": 1,
-        "weapon": {"name": "Mace", "dice": (1, 6), "ability": "str", "damage_type": "bludgeoning"},
+        "starting_weapons": ["mace", "warhammer", "sacred_flame"],
     },
 }
 
@@ -109,6 +125,56 @@ def normalize_choice(value, valid, default_value):
         if key.lower() == value.lower():
             return key
     return default_value
+
+
+def get_weapon(key):
+    if not key:
+        return WEAPONS[DEFAULT_WEAPON_KEY]
+    return WEAPONS.get(key, WEAPONS[DEFAULT_WEAPON_KEY])
+
+
+def format_weapon_payload(key):
+    weapon = get_weapon(key)
+    dice = weapon.get("dice") or (1, 1)
+    return {
+        "key": key or DEFAULT_WEAPON_KEY,
+        "name": weapon["name"],
+        "dice": dice,
+        "dice_label": format_dice(dice),
+        "ability": weapon.get("ability", "str"),
+        "damage_type": weapon.get("damage_type", "physical"),
+    }
+
+
+def default_inventory_for_class(class_name):
+    char_class = normalize_choice(class_name, CLASSES, DEFAULT_CLASS)
+    return list(dict.fromkeys(CLASSES[char_class].get("starting_weapons", []) + [DEFAULT_WEAPON_KEY]))
+
+
+def serialize_inventory(inventory):
+    return json.dumps(inventory or [])
+
+
+def deserialize_inventory(payload):
+    if not payload:
+        return []
+    if isinstance(payload, list):
+        return payload
+    try:
+        data = json.loads(payload)
+        if isinstance(data, list):
+            return [item for item in data if item in WEAPONS]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return [part.strip() for part in str(payload).split(",") if part.strip() in WEAPONS]
+
+
+def ensure_equipped_weapon(equipped_key, inventory):
+    if equipped_key in inventory:
+        return equipped_key
+    if inventory:
+        return inventory[0]
+    return DEFAULT_WEAPON_KEY
 
 
 def roll_4d6_drop_lowest():
@@ -144,19 +210,14 @@ def build_character_sheet(race_choice, class_choice):
     ability_scores = apply_race_modifiers(base_scores, race)
     ability_mods = {ability: ability_modifier(score) for ability, score in ability_scores.items()}
     class_data = CLASSES[char_class]
-    weapon_tpl = class_data["weapon"]
-    attack_ability = weapon_tpl.get("ability") or class_data["primary_ability"]
+    inventory = default_inventory_for_class(char_class)
+    equipped_weapon = inventory[0] if inventory else DEFAULT_WEAPON_KEY
+    weapon_payload = format_weapon_payload(equipped_weapon)
+    attack_ability = weapon_payload["ability"] or class_data["primary_ability"]
     proficiency = PROFICIENCY_BONUS
     max_hp = max(class_data["hit_die"] + ability_mods["con"], 1)
     ac = max(10 + ability_mods["dex"] + class_data.get("armor_bonus", 0), 10)
     attack_bonus = ability_mods[attack_ability] + proficiency
-    weapon = {
-        "name": weapon_tpl["name"],
-        "dice": weapon_tpl["dice"],
-        "dice_label": format_dice(weapon_tpl["dice"]),
-        "ability": attack_ability,
-        "damage_type": weapon_tpl.get("damage_type", "physical"),
-    }
     return {
         "race": race,
         "char_class": char_class,
@@ -167,9 +228,11 @@ def build_character_sheet(race_choice, class_choice):
         "current_hp": max_hp,
         "ac": ac,
         "proficiency": proficiency,
-        "weapon": weapon,
+        "weapon": weapon_payload,
         "attack_bonus": attack_bonus,
         "attack_ability": attack_ability,
+        "inventory": inventory,
+        "equipped_weapon": equipped_weapon,
     }
 
 
@@ -181,17 +244,14 @@ def derive_character_from_record(record):
     ability_mods = {ability: ability_modifier(score) for ability, score in abilities.items()}
     proficiency = PROFICIENCY_BONUS
     ac = max(10 + ability_mods["dex"] + class_data.get("armor_bonus", 0), 10)
-    weapon_tpl = class_data["weapon"]
-    attack_ability = weapon_tpl.get("ability") or class_data["primary_ability"]
-    attack_bonus = ability_mods[attack_ability] + proficiency
     max_hp = record.get("hp") or max(class_data["hit_die"] + ability_mods["con"], 1)
-    weapon = {
-        "name": weapon_tpl["name"],
-        "dice": weapon_tpl["dice"],
-        "dice_label": format_dice(weapon_tpl["dice"]),
-        "ability": attack_ability,
-        "damage_type": weapon_tpl.get("damage_type", "physical"),
-    }
+    inventory = deserialize_inventory(record.get("weapon_inventory"))
+    if not inventory:
+        inventory = default_inventory_for_class(char_class)
+    equipped_key = ensure_equipped_weapon(record.get("equipped_weapon"), inventory)
+    weapon = format_weapon_payload(equipped_key)
+    attack_ability = weapon["ability"] or class_data["primary_ability"]
+    attack_bonus = ability_mods[attack_ability] + proficiency
     return {
         "race": race,
         "char_class": char_class,
@@ -204,6 +264,8 @@ def derive_character_from_record(record):
         "weapon": weapon,
         "attack_bonus": attack_bonus,
         "attack_ability": attack_ability,
+        "inventory": inventory,
+        "equipped_weapon": weapon["key"],
     }
 
 
@@ -246,7 +308,9 @@ def init_db():
             wis_score INTEGER,
             cha_score INTEGER,
             current_hp INTEGER,
-            level INTEGER
+            level INTEGER,
+            equipped_weapon TEXT,
+            weapon_inventory TEXT
         );
         """
     )
@@ -266,6 +330,10 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN current_hp INTEGER")
     if not _column_exists(c, "users", "level"):
         c.execute("ALTER TABLE users ADD COLUMN level INTEGER DEFAULT 1")
+    if not _column_exists(c, "users", "equipped_weapon"):
+        c.execute(f"ALTER TABLE users ADD COLUMN equipped_weapon TEXT DEFAULT '{DEFAULT_WEAPON_KEY}'")
+    if not _column_exists(c, "users", "weapon_inventory"):
+        c.execute("ALTER TABLE users ADD COLUMN weapon_inventory TEXT")
     c.execute("UPDATE users SET hp = COALESCE(hp, 10)")
     c.execute("UPDATE users SET atk = COALESCE(atk, 2)")
 
@@ -273,7 +341,8 @@ def init_db():
     c.execute(
         """
         SELECT id, username, race, char_class, hp, current_hp, level,
-               str_score, dex_score, con_score, int_score, wis_score, cha_score
+               str_score, dex_score, con_score, int_score, wis_score, cha_score,
+               equipped_weapon, weapon_inventory
         FROM users
         """
     )
@@ -283,6 +352,12 @@ def init_db():
             or row["char_class"] is None
             or any(row[f"{ability}_score"] is None for ability in ABILITY_KEYS)
         )
+        inventory = deserialize_inventory(row["weapon_inventory"])
+        char_class = row["char_class"] or DEFAULT_CLASS
+        if not inventory:
+            inventory = default_inventory_for_class(char_class)
+        equipped_weapon = ensure_equipped_weapon(row["equipped_weapon"], inventory)
+
         if needs_sheet:
             sheet = build_character_sheet(row["race"] or DEFAULT_RACE, row["char_class"] or DEFAULT_CLASS)
             ability_values = sheet["abilities"]
@@ -291,7 +366,8 @@ def init_db():
                 UPDATE users
                 SET race = ?, char_class = ?, level = ?, hp = ?, current_hp = ?,
                     atk = ?, str_score = ?, dex_score = ?, con_score = ?,
-                    int_score = ?, wis_score = ?, cha_score = ?
+                    int_score = ?, wis_score = ?, cha_score = ?,
+                    equipped_weapon = ?, weapon_inventory = ?
                 WHERE id = ?
                 """,
                 (
@@ -307,11 +383,26 @@ def init_db():
                     ability_values["int"],
                     ability_values["wis"],
                     ability_values["cha"],
+                    sheet["equipped_weapon"],
+                    serialize_inventory(sheet["inventory"]),
                     row["id"],
                 ),
             )
-        elif row["current_hp"] is None:
-            c.execute("UPDATE users SET current_hp = hp WHERE id = ?", (row["id"],))
+        else:
+            if row["current_hp"] is None:
+                c.execute("UPDATE users SET current_hp = hp WHERE id = ?", (row["id"],))
+            c.execute(
+                """
+                UPDATE users
+                SET equipped_weapon = ?, weapon_inventory = ?
+                WHERE id = ?
+                """,
+                (
+                    equipped_weapon,
+                    serialize_inventory(inventory),
+                    row["id"],
+                ),
+            )
 
     conn.commit()
     conn.close()
@@ -323,7 +414,6 @@ def get_user(username):
     c = conn.cursor()
     c.execute("SELECT * FROM users WHERE username = ?", (username,))
     row = c.fetchone()
-    conn.commit()
     conn.close()
     if row:
         return dict(row)
@@ -341,8 +431,8 @@ def create_user(username, password, race_choice, class_choice):
         INSERT INTO users (
             username, password_hash, race, char_class, level,
             str_score, dex_score, con_score, int_score, wis_score, cha_score,
-            hp, current_hp, atk
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            hp, current_hp, atk, equipped_weapon, weapon_inventory
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             username,
@@ -359,6 +449,8 @@ def create_user(username, password, race_choice, class_choice):
             sheet["max_hp"],
             sheet["current_hp"],
             sheet["attack_bonus"],
+            sheet["equipped_weapon"],
+            serialize_inventory(sheet["inventory"]),
         ),
     )
     conn.commit()
@@ -369,6 +461,14 @@ def update_user_current_hp(username, hp):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE users SET current_hp = ? WHERE username = ?", (hp, username))
+    conn.commit()
+    conn.close()
+
+
+def update_user_equipped_weapon(username, weapon_key):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE users SET equipped_weapon = ? WHERE username = ?", (weapon_key, username))
     conn.commit()
     conn.close()
 
@@ -390,6 +490,8 @@ def update_user_current_hp(username, hp):
 #     "attack_bonus": int,
 #     "attack_ability": str,
 #     "proficiency": int,
+#     "inventory": list[str],
+#     "equipped_weapon": str,
 # }
 players = {}
 
@@ -416,8 +518,58 @@ def build_player_state(user_record, sid):
         "y": START_Y,
     }
     state.update(derived)
+    state["inventory"] = list(state.get("inventory", []))
     state["hp"] = clamp_hp(user_record.get("current_hp"), derived["max_hp"])
+    apply_weapon_to_player_state(state, state.get("equipped_weapon"))
     return state
+
+
+def apply_weapon_to_player_state(player, weapon_key=None):
+    inventory = player.get("inventory") or [DEFAULT_WEAPON_KEY]
+    weapon_key = ensure_equipped_weapon(weapon_key, inventory)
+    player["equipped_weapon"] = weapon_key
+    weapon_payload = format_weapon_payload(weapon_key)
+    player["weapon"] = weapon_payload
+    class_name = normalize_choice(player.get("char_class"), CLASSES, DEFAULT_CLASS)
+    class_data = CLASSES[class_name]
+    attack_ability = weapon_payload.get("ability") or class_data["primary_ability"]
+    player["attack_ability"] = attack_ability
+    player["attack_bonus"] = player["ability_mods"].get(attack_ability, 0) + player["proficiency"]
+    return weapon_payload
+
+
+def resolve_weapon_key_from_input(player, identifier):
+    if not identifier:
+        return None
+    target = identifier.strip().lower()
+    for key in player.get("inventory", []):
+        weapon = get_weapon(key)
+        if key.lower() == target or weapon["name"].lower() == target:
+            return key
+    return None
+
+
+def equip_weapon_for_player(username, weapon_identifier):
+    player = players.get(username)
+    if not player:
+        return False, "You are not in the game."
+    if not weapon_identifier:
+        return False, "Select a weapon to equip."
+
+    weapon_key = resolve_weapon_key_from_input(player, weapon_identifier)
+    if not weapon_key:
+        return False, "You do not possess that weapon."
+    if weapon_key == player.get("equipped_weapon"):
+        return False, f"{get_weapon(weapon_key)['name']} is already equipped."
+
+    apply_weapon_to_player_state(player, weapon_key)
+    update_user_equipped_weapon(username, weapon_key)
+    send_room_state(username)
+
+    room = room_name(player["x"], player["y"])
+    message = f"{username} equips {player['weapon']['name']}."
+    socketio.emit("system_message", {"text": message}, room=room)
+    return True, message
 
 
 def send_room_state(username):
@@ -428,6 +580,18 @@ def send_room_state(username):
     room = get_room_info(x, y)
     occupants = get_players_in_room(x, y)
     weapon = player.get("weapon", {})
+    inventory_payload = []
+    for key in player.get("inventory", []):
+        info = format_weapon_payload(key)
+        inventory_payload.append(
+            {
+                "key": info["key"],
+                "name": info["name"],
+                "dice": info["dice_label"],
+                "damage_type": info["damage_type"],
+                "equipped": info["key"] == player.get("equipped_weapon"),
+            }
+        )
     payload = {
         "x": x,
         "y": y,
@@ -443,6 +607,7 @@ def send_room_state(username):
             "ac": player["ac"],
             "proficiency": player["proficiency"],
             "weapon": {
+                "key": weapon.get("key", DEFAULT_WEAPON_KEY),
                 "name": weapon.get("name", "Unarmed"),
                 "dice": weapon.get("dice_label", "-"),
                 "damage_type": weapon.get("damage_type", ""),
@@ -451,6 +616,7 @@ def send_room_state(username):
             "attack_ability": player["attack_ability"],
             "abilities": player["abilities"],
             "ability_mods": player["ability_mods"],
+            "weapon_inventory": inventory_payload,
         },
     }
     socketio.emit("room_state", payload, to=player["sid"])
@@ -505,6 +671,15 @@ def handle_command(username, command_text):
             return True
         target_name = parts[1]
         resolve_attack(username, target_name)
+        return True
+    if cmd in ("equip", "wield"):
+        if len(parts) < 2:
+            notify_player(username, "Usage: /equip <weapon_name>")
+            return True
+        weapon_name = " ".join(parts[1:])
+        success, message = equip_weapon_for_player(username, weapon_name)
+        if not success:
+            notify_player(username, message)
         return True
 
     notify_player(username, f"Unknown command: {cmd}")
@@ -687,9 +862,12 @@ def on_join_game():
             "weapon",
             "attack_bonus",
             "attack_ability",
+            "inventory",
+            "equipped_weapon",
         ]:
             existing[key] = refreshed[key]
         existing["hp"] = clamp_hp(user_record.get("current_hp"), existing["max_hp"])
+        apply_weapon_to_player_state(existing, existing.get("equipped_weapon"))
 
     x = players[username]["x"]
     y = players[username]["y"]
@@ -749,6 +927,17 @@ def on_move(data):
 
     # Send new room state to moving player
     send_room_state(username)
+
+
+@socketio.on("equip_weapon")
+def on_equip_weapon(data):
+    username = session.get("username")
+    if not username or username not in players:
+        return
+    weapon_key = (data or {}).get("weapon") or (data or {}).get("weapon_key")
+    success, message = equip_weapon_for_player(username, weapon_key)
+    if not success:
+        notify_player(username, message)
 
 
 @socketio.on("chat")

@@ -15,6 +15,10 @@ const profEl = document.getElementById("stat-prof");
 const weaponEl = document.getElementById("stat-weapon");
 const charSummaryEl = document.getElementById("char-summary");
 const abilityTableBody = document.getElementById("ability-table-body");
+const weaponSelect = document.getElementById("weapon-select");
+const weaponListEl = document.getElementById("weapon-list");
+const equipForm = document.getElementById("equip-form");
+const equipButton = equipForm ? equipForm.querySelector("button") : null;
 
 const ABILITY_ORDER = ["str", "dex", "con", "int", "wis", "cha"];
 const ABILITY_LABELS = {
@@ -113,7 +117,7 @@ function renderCharacterPanel(character) {
   if (profEl && typeof character.proficiency !== "undefined") {
     profEl.textContent = formatBonus(character.proficiency);
   }
-  if (weaponEl && character.weapon) {
+if (weaponEl && character.weapon) {
     const weapon = character.weapon;
     const damageType = weapon.damage_type ? ` ${weapon.damage_type}` : "";
     weaponEl.textContent = `${weapon.name} (${weapon.dice}${damageType})`;
@@ -123,6 +127,7 @@ function renderCharacterPanel(character) {
     attackBonusEl.textContent = `${formatBonus(character.attack_bonus)}${abilityTag ? ` via ${abilityTag}` : ""}`;
   }
   renderAbilityTable(character.abilities, character.ability_mods);
+  renderWeaponPanel(character.weapon_inventory || [], character.weapon);
 }
 
 function renderAbilityTable(scores = {}, modifiers = {}) {
@@ -151,4 +156,53 @@ function renderAbilityTable(scores = {}, modifiers = {}) {
 function formatBonus(value) {
   if (typeof value !== "number") return "--";
   return value >= 0 ? `+${value}` : `${value}`;
+}
+
+function renderWeaponPanel(weaponInventory = [], equippedWeapon = null) {
+  if (!weaponSelect || !weaponListEl) return;
+  weaponSelect.innerHTML = "";
+  weaponListEl.innerHTML = "";
+
+  if (!weaponInventory.length) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "No weapons available";
+    weaponSelect.appendChild(placeholder);
+    weaponSelect.disabled = true;
+    if (equipButton) equipButton.disabled = true;
+    return;
+  }
+
+  weaponSelect.disabled = false;
+  if (equipButton) equipButton.disabled = false;
+
+  weaponInventory.forEach((weapon) => {
+    const label = formatWeaponLabel(weapon);
+    const option = document.createElement("option");
+    option.value = weapon.key;
+    option.textContent = label;
+    if (weapon.equipped) option.selected = true;
+    weaponSelect.appendChild(option);
+
+    const li = document.createElement("li");
+    li.textContent = label;
+    if (weapon.equipped) li.classList.add("equipped");
+    weaponListEl.appendChild(li);
+  });
+}
+
+function formatWeaponLabel(weapon) {
+  if (!weapon) return "--";
+  const damage = weapon.dice ? weapon.dice : "-";
+  const type = weapon.damage_type ? ` ${weapon.damage_type}` : "";
+  const suffix = weapon.equipped ? " [Equipped]" : "";
+  return `${weapon.name} (${damage}${type})${suffix}`;
+}
+
+if (equipForm) {
+  equipForm.addEventListener("submit", (evt) => {
+    evt.preventDefault();
+    if (!weaponSelect || !weaponSelect.value) return;
+    socket.emit("equip_weapon", { weapon: weaponSelect.value });
+  });
 }
