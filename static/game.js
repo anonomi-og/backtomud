@@ -5,6 +5,7 @@ const roomDescEl = document.getElementById("room-desc");
 const coordsEl = document.getElementById("coords");
 const playersListEl = document.getElementById("players-list");
 const mobListEl = document.getElementById("mob-list");
+const npcListEl = document.getElementById("npc-list");
 const lootListEl = document.getElementById("loot-list");
 const messagesEl = document.getElementById("messages");
 const chatForm = document.getElementById("chat-form");
@@ -78,6 +79,11 @@ const COMMAND_REFERENCE = [
     prefill: "/loot ",
     description: "Claim treasure on the ground by its tag (aliases /take, /pickup).",
   },
+  {
+    label: "/talk <npc> <message>",
+    prefill: "/talk ",
+    description: "Converse with a nearby villager or NPC using the handle shown in the NPC list.",
+  },
 ];
 
 function addMessage(text, cssClass) {
@@ -118,6 +124,7 @@ socket.on("room_state", (data) => {
     renderCharacterPanel(data.character);
   }
   renderMobList(data.mobs || []);
+  renderNpcList(data.npcs || []);
   renderLootList(data.loot || []);
   renderDoorList(data.doors || []);
   renderWarpStone(data.warp_stone || null);
@@ -579,7 +586,10 @@ function renderMobList(mobs = []) {
   mobs.forEach((mob) => {
     const li = document.createElement("li");
     const label = document.createElement("span");
-    label.textContent = `${mob.name} (${mob.hp}/${mob.max_hp} HP, AC ${mob.ac})`;
+    const tags = [];
+    if (mob.is_npc) tags.push("NPC");
+    const tagLabel = tags.length ? `[${tags.join(", ")}] ` : "";
+    label.textContent = `${tagLabel}${mob.name} (${mob.hp}/${mob.max_hp} HP, AC ${mob.ac})`;
     li.appendChild(label);
     const attackButton = document.createElement("button");
     attackButton.textContent = "Attack";
@@ -588,6 +598,41 @@ function renderMobList(mobs = []) {
     });
     li.appendChild(attackButton);
     mobListEl.appendChild(li);
+  });
+}
+
+function renderNpcList(npcs = []) {
+  if (!npcListEl) return;
+  npcListEl.innerHTML = "";
+  if (!npcs.length) {
+    const li = document.createElement("li");
+    li.textContent = "No villagers nearby.";
+    npcListEl.appendChild(li);
+    return;
+  }
+  npcs.forEach((npc) => {
+    const li = document.createElement("li");
+    const label = document.createElement("span");
+    const stats = `(${npc.hp}/${npc.max_hp} HP, AC ${npc.ac})`;
+    const count =
+      typeof npc.conversation_count === "number" && npc.conversation_count > 0
+        ? ` — chats: ${npc.conversation_count}`
+        : "";
+    label.textContent = `${npc.name} ${stats}${count}`;
+    if (npc.description) {
+      label.title = npc.description;
+    }
+    li.appendChild(label);
+    const talkButton = document.createElement("button");
+    talkButton.textContent = "Talk";
+    talkButton.addEventListener("click", () => {
+      const handle = npc.handle || npc.id || npc.name;
+      if (!handle) return;
+      chatInput.value = `/talk ${handle} `;
+      chatInput.focus();
+    });
+    li.appendChild(talkButton);
+    npcListEl.appendChild(li);
   });
 }
 
