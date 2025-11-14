@@ -6,6 +6,8 @@ import sqlite3
 import time
 from typing import Optional
 
+from dotenv import load_dotenv
+
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from flask_socketio import SocketIO, join_room, leave_room, emit, disconnect
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -21,6 +23,8 @@ except ImportError:  # pragma: no cover - optional dependency path
     openai_module = None
 
 # --- Basic Flask setup ---
+load_dotenv()
+
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-me-in-prod")
 
