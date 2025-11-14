@@ -4,9 +4,21 @@ import os
 import random
 import sqlite3
 import time
+from typing import Optional
+
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from flask_socketio import SocketIO, join_room, leave_room, emit, disconnect
 from werkzeug.security import generate_password_hash, check_password_hash
+
+try:
+    from openai import OpenAI
+except ImportError:  # pragma: no cover - optional dependency path
+    OpenAI = None
+
+try:
+    import openai as openai_module
+except ImportError:  # pragma: no cover - optional dependency path
+    openai_module = None
 
 # --- Basic Flask setup ---
 app = Flask(__name__)
@@ -719,7 +731,50 @@ MOB_TEMPLATES = {
         "loot": [("kobold_sling", 0.5)],
         "description": "A scaly kobold scouting the area with wary, darting eyes.",
     },
+    "npc_elder_mara": {
+        "name": "Elder Mara",
+        "ac": 13,
+        "hp": 24,
+        "speed": 25,
+        "abilities": {"str": 9, "dex": 11, "con": 12, "int": 14, "wis": 15, "cha": 16},
+        "attack_bonus": 4,
+        "damage": {"dice": (1, 6), "bonus": 2, "type": "bludgeoning"},
+        "attack_interval": 3.6,
+        "initiative": 10,
+        "behaviour_type": "defensive",
+        "xp": 0,
+        "gold_range": (0, 0),
+        "loot": [],
+        "description": "The village elder, leaning on a rune-carved staff yet keen-eyed and alert.",
+    },
 }
+
+NPC_TEMPLATES = {
+    "elder_mara": {
+        "name": "Elder Mara",
+        "mob_template": "npc_elder_mara",
+        "zone": "village",
+        "coords": (2, 2),
+        "bio": (
+            "A seasoned rune-keeper who shepherds Dawnfell Village and remembers the warpstone routes of old."
+        ),
+        "personality": "warm, patient, and quietly amused by youthful bravado",
+        "facts": [
+            "Dawnfell Village was rebuilt atop an abandoned teleport nexus, and the warp stones reawakened only a generation ago.",
+            "Merchants and adventurers gather in the Village Square before venturing toward the mines or river routes.",
+            "The town hall's clerks can mark safe paths to the Sunken Stair if you ask respectfully.",
+            "Warp stones require calm focus—touch the rune and picture the destination to travel.",
+            "The Old Mine Entrance houses the nearest warp stone leading to the first dungeon."
+        ],
+        "secret_fact": (
+            "A hidden warp stone shard rests beneath the shrine steps; six sincere visits awaken it as a shortcut to the Sunken Stair."
+        ),
+        "aliases": ["mara", "elder", "elder mara", "elder_mara"],
+    }
+}
+
+NPC_SECRET_THRESHOLD = 5
+NPC_MODEL_NAME = os.environ.get("OPENAI_NPC_MODEL", "gpt-4o-mini")
 
 SPELLS = {
     "magic_missile": {
@@ -1450,6 +1505,12 @@ def update_character_items(character_id, items):
 #     "equipped_weapon": str,
 # }
 players = {}
+mobs = {}
+npcs = {}
+npc_lookup_by_id = {}
+npc_conversations = {}
+_openai_client: Optional[object] = None
+_openai_mode: Optional[str] = None
 
 
 def compute_action_multiplier(initiative):
@@ -1505,7 +1566,6 @@ def check_player_action_gate(username):
 
 def mark_player_action(player):
     player["last_action_ts"] = time.time()
-mobs = {}
 room_loot = {}
 _mob_counter = 0
 _loot_counter = 0
@@ -1712,6 +1772,53 @@ def spawn_mob(template_key, x=None, y=None, zone=None):
     return mob
 
 
+def spawn_npc_instance(npc_key):
+    info = NPC_TEMPLATES.get(npc_key)
+    if not info:
+        return None
+    existing_id = npcs.get(npc_key)
+    if existing_id:
+        existing = mobs.get(existing_id)
+        if existing and existing.get("alive"):
+            return existing
+    template_key = info.get("mob_template")
+    coords = info.get("coords", (0, 0))
+    zone = info.get("zone", DEFAULT_ZONE)
+    mob = spawn_mob(template_key, coords[0], coords[1], zone)
+    if not mob:
+        return None
+    mob["is_npc"] = True
+    mob["npc_key"] = npc_key
+    mob["npc_bio"] = info.get("bio", "")
+    mob["npc_personality"] = info.get("personality", "")
+    mob["npc_facts"] = list(info.get("facts", []))
+    mob["npc_secret_fact"] = info.get("secret_fact")
+    mob["npc_aliases"] = list(info.get("aliases", []))
+    npcs[npc_key] = mob["id"]
+    npc_lookup_by_id[mob["id"]] = npc_key
+    return mob
+
+
+def spawn_initial_npcs():
+    npcs.clear()
+    npc_lookup_by_id.clear()
+    for npc_key in NPC_TEMPLATES.keys():
+        npc_conversations.setdefault(npc_key, {})
+        mob = spawn_npc_instance(npc_key)
+        if not mob:
+            continue
+
+
+def respawn_npc_after_delay(npc_key, delay=60):
+    socketio.sleep(delay)
+    mob = spawn_npc_instance(npc_key)
+    if not mob:
+        return
+    zone = mob.get("zone", DEFAULT_ZONE)
+    x, y = mob.get("x"), mob.get("y")
+    broadcast_room_state(zone, x, y)
+
+
 def spawn_initial_mobs():
     mobs.clear()
     for zone, world in WORLDS.items():
@@ -1720,6 +1827,7 @@ def spawn_initial_mobs():
             for x, tile in enumerate(row):
                 for template_key in tile.get("mobs", []):
                     spawn_mob(template_key, x, y, zone)
+    spawn_initial_npcs()
 
 
 def get_mobs_in_room(zone, x, y):
@@ -1728,6 +1836,10 @@ def get_mobs_in_room(zone, x, y):
         for mob in mobs.values()
         if mob["alive"] and mob.get("zone", DEFAULT_ZONE) == zone and mob["x"] == x and mob["y"] == y
     ]
+
+
+def get_npcs_in_room(zone, x, y):
+    return [mob for mob in get_mobs_in_room(zone, x, y) if mob.get("is_npc")]
 
 
 def format_mob_payload(mob):
@@ -1740,7 +1852,123 @@ def format_mob_payload(mob):
         "xp": mob.get("xp", 0),
         "description": mob.get("description", ""),
         "behaviour": mob.get("behaviour_type", "defensive"),
+        "is_npc": mob.get("is_npc", False),
     }
+
+
+def format_npc_payload(mob, viewer=None):
+    npc_key = mob.get("npc_key")
+    counts = npc_conversations.get(npc_key, {}) if npc_key else {}
+    handle = npc_key or mob.get("id")
+    return {
+        "id": mob["id"],
+        "name": mob.get("name"),
+        "ac": mob.get("ac"),
+        "hp": mob.get("hp"),
+        "max_hp": mob.get("max_hp"),
+        "description": mob.get("description", ""),
+        "bio": mob.get("npc_bio", ""),
+        "handle": handle,
+        "conversation_count": counts.get(viewer, 0) if viewer else 0,
+    }
+
+
+def ensure_openai_client():
+    global _openai_client, _openai_mode
+    if _openai_mode == "disabled":
+        return None, "disabled"
+    if _openai_client is not None and _openai_mode:
+        return _openai_client, _openai_mode
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        _openai_mode = "disabled"
+        return None, "disabled"
+    if OpenAI is not None:
+        try:
+            _openai_client = OpenAI(api_key=api_key)
+            _openai_mode = "client"
+            return _openai_client, _openai_mode
+        except Exception:
+            _openai_client = None
+            _openai_mode = None
+    if openai_module is not None:
+        openai_module.api_key = api_key
+        _openai_client = openai_module
+        _openai_mode = "legacy"
+        return _openai_client, _openai_mode
+    _openai_mode = "disabled"
+    return None, "disabled"
+
+
+def build_npc_knowledge(mob, conversation_count):
+    knowledge = list(mob.get("npc_facts", []))
+    secret = mob.get("npc_secret_fact")
+    if secret and conversation_count > NPC_SECRET_THRESHOLD:
+        knowledge.append(secret)
+    return knowledge
+
+
+def generate_npc_response(mob, player, message, conversation_count):
+    client, mode = ensure_openai_client()
+    if not client or mode == "disabled":
+        return None, "AI conversations are not configured. Set OPENAI_API_KEY on the server."
+
+    npc_name = mob.get("name", "The villager")
+    persona = mob.get("npc_personality", "friendly")
+    bio = mob.get("npc_bio", "a notable resident of Dawnfell Village")
+    knowledge = build_npc_knowledge(mob, conversation_count)
+    knowledge_text = "\n".join(f"- {fact}" for fact in knowledge) if knowledge else "- (No stored facts.)"
+    player_name = player.get("name") or "An adventurer"
+    race = player.get("race") or ""
+    char_class = player.get("char_class") or ""
+    level = player.get("level", 1)
+    lineage = " ".join(part for part in [race, char_class] if part)
+    summary_bits = [player_name]
+    if lineage:
+        summary_bits.append(lineage)
+    summary_bits.append(f"Level {level}")
+    player_summary = " • ".join(summary_bits)
+    player_bio = player.get("bio") or "No personal biography provided."
+    player_description = player.get("description") or ""
+    conversation_line = f"You have spoken with this adventurer {conversation_count} times."
+    instructions = (
+        f"You are {npc_name}, {bio}. Speak in a {persona} tone. Stay in character and use the knowledge provided. "
+        "Offer guidance about Dawnfell Village and warp stones when it fits the conversation. If a question exceeds your knowledge, admit uncertainty."
+    )
+    player_context_lines = [
+        f"Adventurer summary: {player_summary}.",
+        f"Adventurer bio: {player_bio}",
+    ]
+    if player_description:
+        player_context_lines.append(f"Adventurer appearance: {player_description}")
+    player_context = "\n".join(player_context_lines)
+    messages = [
+        {"role": "system", "content": instructions},
+        {"role": "system", "content": conversation_line},
+        {"role": "system", "content": "Knowledge available to you:\n" + knowledge_text},
+        {"role": "system", "content": "Respond in 1-3 short paragraphs."},
+        {"role": "user", "content": f"{player_context}\nPlayer says: {message}"},
+    ]
+    try:
+        if mode == "client" and hasattr(client, "chat"):
+            response = client.chat.completions.create(
+                model=NPC_MODEL_NAME,
+                messages=messages,
+                temperature=0.6,
+                max_tokens=220,
+            )
+            reply = response.choices[0].message.content.strip()
+        else:
+            response = client.ChatCompletion.create(
+                model=NPC_MODEL_NAME,
+                messages=messages,
+                temperature=0.6,
+                max_tokens=220,
+            )
+            reply = response["choices"][0]["message"]["content"].strip()
+    except Exception as exc:  # pragma: no cover - network dependency
+        return None, str(exc)
+    return reply, None
 
 
 def find_mob_in_room(identifier, zone, x, y):
@@ -1751,6 +1979,108 @@ def find_mob_in_room(identifier, zone, x, y):
         if mob["id"].lower() == lookup or mob["name"].lower() == lookup:
             return mob
     return None
+
+
+def find_npc_in_room(identifier, zone, x, y):
+    if not identifier:
+        return None
+    lookup = identifier.strip().lower()
+    for npc in get_npcs_in_room(zone, x, y):
+        if npc["id"].lower() == lookup:
+            return npc
+        key = npc.get("npc_key")
+        if key and key.lower() == lookup:
+            return npc
+        name = npc.get("name")
+        if name and name.lower() == lookup:
+            return npc
+        if key and key.replace("_", " ").lower() == lookup:
+            return npc
+        for alias in npc.get("npc_aliases", []):
+            if alias.lower() == lookup:
+                return npc
+    return None
+
+
+def parse_talk_target(player, raw_args):
+    if not player:
+        return None, None
+    text = (raw_args or "").strip()
+    if not text:
+        return None, None
+    zone = player.get("zone", DEFAULT_ZONE)
+    x, y = player["x"], player["y"]
+    if text[0] in ('"', "'"):
+        quote = text[0]
+        closing = text.find(quote, 1)
+        if closing != -1:
+            identifier = text[1:closing].strip()
+            remainder = text[closing + 1 :].strip()
+            npc = find_npc_in_room(identifier, zone, x, y)
+            if npc and remainder:
+                return npc, remainder
+    parts = text.split(None, 1)
+    identifier = parts[0]
+    remainder = parts[1].strip() if len(parts) > 1 else ""
+    npc = find_npc_in_room(identifier, zone, x, y)
+    if npc and remainder:
+        return npc, remainder
+    for candidate in get_npcs_in_room(zone, x, y):
+        lowered = text.lower()
+        aliases = [candidate.get("name", ""), candidate.get("npc_key", "")]
+        aliases.extend(candidate.get("npc_aliases", []))
+        for alias in aliases:
+            alias = (alias or "").strip()
+            if not alias:
+                continue
+            alias_lower = alias.lower()
+            if lowered.startswith(alias_lower):
+                remainder = text[len(alias) :].strip()
+                if remainder:
+                    return candidate, remainder
+            compact = alias_lower.replace(" ", "_")
+            if compact != alias_lower and lowered.startswith(compact):
+                remainder = text[len(compact) :].strip()
+                if remainder:
+                    return candidate, remainder
+    return None, None
+
+
+def handle_talk_command(username, raw_args):
+    player = players.get(username)
+    if not player:
+        return False, "You are not in the game."
+    npc, message = parse_talk_target(player, raw_args)
+    if not npc or not message:
+        return False, "Usage: /talk <npc> <message>"
+    if not npc.get("alive") or npc.get("hp", 0) <= 0:
+        return False, f"{npc.get('name', 'That NPC')} cannot respond right now."
+    npc_key = npc.get("npc_key")
+    if not npc_key:
+        return False, "That creature does not respond to conversation."
+    counts = npc_conversations.setdefault(npc_key, {}) if npc_key else {}
+    previous = counts.get(username, 0)
+    counts[username] = previous + 1
+    conversation_total = counts[username]
+    reply, error = generate_npc_response(npc, player, message, conversation_total)
+    if error:
+        counts[username] = previous
+        return False, f"{npc.get('name', 'The NPC')} hesitates: {error}"
+
+    zone = player.get("zone", DEFAULT_ZONE)
+    room = room_name(zone, player["x"], player["y"])
+    socketio.emit(
+        "chat_message",
+        {"from": username, "text": f"(to {npc['name']}) {message}"},
+        room=room,
+    )
+    socketio.emit(
+        "chat_message",
+        {"from": npc["name"], "text": reply},
+        room=room,
+    )
+    send_room_state(username)
+    return True, reply
 
 
 def stop_mob_combat(mob):
@@ -2190,6 +2520,7 @@ def send_room_state(username):
             continue
         item_payload.append(info)
     mobs_here = [format_mob_payload(mob) for mob in get_mobs_in_room(zone, x, y)]
+    npcs_here = [format_npc_payload(npc, viewer=username) for npc in get_npcs_in_room(zone, x, y)]
     loot_here = format_loot_payload(get_loot_in_room(zone, x, y))
     doors_here = get_room_door_payload(zone, x, y)
     exits = build_exit_payload(zone, x, y)
@@ -2209,6 +2540,7 @@ def send_room_state(username):
         "description": room["description"],
         "players": occupants,
         "mobs": mobs_here,
+        "npcs": npcs_here,
         "loot": loot_here,
         "doors": doors_here,
         "exits": exits,
@@ -2587,6 +2919,12 @@ def handle_command(username, command_text):
         if not success and message:
             notify_player(username, message)
         return True
+    if cmd == "talk":
+        remainder = command_text[len(parts[0]) :].strip()
+        success, message = handle_talk_command(username, remainder)
+        if not success and message:
+            notify_player(username, message)
+        return True
 
     notify_player(username, f"Unknown command: {cmd}")
     return True
@@ -2708,6 +3046,11 @@ def handle_mob_defeat(mob, killer_name=None):
             room=room,
         )
     mobs.pop(mob["id"], None)
+    if mob.get("is_npc"):
+        npc_key = npc_lookup_by_id.pop(mob["id"], None)
+        if npc_key:
+            npcs.pop(npc_key, None)
+            socketio.start_background_task(respawn_npc_after_delay, npc_key)
     broadcast_room_state(zone, x, y)
 
 
