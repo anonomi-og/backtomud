@@ -56,11 +56,11 @@ VILLAGE_MAP = [
         },
         {
             "name": "Town Hall",
-            "description": "A timbered hall where the elder settles disputes and keeps the ledger.",
+            "description": "The timbered town hall smells of parchment, and a reinforced service door leads east into the storage barn.",
         },
         {
             "name": "Storage Barn",
-            "description": "Barrels of grain and bundled hay are stacked beneath a wide loft.",
+            "description": "Barrels of grain and bundled hay crowd the floor while the westward service door connects back to the hall.",
         },
         {
             "name": "Wagon Yard",
@@ -86,7 +86,8 @@ VILLAGE_MAP = [
         },
         {
             "name": "Old Mine Entrance",
-            "description": "A timber-braced tunnel yawns beneath the hill, cold air flowing outward.",
+            "description": "Timber supports frame the Old Mine entrance where a rune-cut warp stone hums beside the cart tracks.",
+            "warp_description": "A waist-high warp stone thrums with stored power, waiting for a willing traveler.",
             "travel_to": {"zone": "dungeon_1", "start": DUNGEON_1_START},
         },
     ],
@@ -130,7 +131,8 @@ VILLAGE_MAP = [
         },
         {
             "name": "Sunken Stair",
-            "description": "Stone steps descend into a chill draught carrying the scent of crystal dust.",
+            "description": "Stone steps descend into a cellar where a crystal-veined warp stone casts steady, cold light.",
+            "warp_description": "An embedded warp stone glows between the lowest steps, promising passage for those who touch it.",
             "travel_to": {"zone": "dungeon_2", "start": DUNGEON_2_START},
         },
         {
@@ -165,7 +167,8 @@ DUNGEON_1_MAP = [
         },
         {
             "name": "Collapsed Entrance",
-            "description": "Support beams groan as daylight filters through a broken shaft above.",
+            "description": "Splintered beams circle a collapsed shaft where a cracked warp stone glows amid the rubble.",
+            "warp_description": "A chipped warp stone flickers here, still strong enough to return travelers to the village.",
             "travel_to": {"zone": "village", "start": VILLAGE_START},
         },
         {
@@ -355,7 +358,8 @@ DUNGEON_2_MAP = [
         },
         {
             "name": "Prismatic Vestibule",
-            "description": "Spectral light paints the walls in shifting hues.",
+            "description": "Spectral light spills from a pedestal where a faceted warp stone rotates slowly in mid-air.",
+            "warp_description": "The suspended warp stone pulses invitingly, ready to fold space back to Greyford Village.",
             "travel_to": {"zone": "village", "start": VILLAGE_START},
         },
         {
@@ -533,6 +537,61 @@ WORLDS = {
     "dungeon_1": make_world("Old Mine", DUNGEON_1_MAP, DUNGEON_1_START),
     "dungeon_2": make_world("Crystal Depths", DUNGEON_2_MAP, DUNGEON_2_START),
 }
+
+DIRECTION_VECTORS = {
+    "north": (0, -1),
+    "south": (0, 1),
+    "west": (-1, 0),
+    "east": (1, 0),
+}
+
+DOOR_DEFINITIONS = {
+    "village_town_hall_service": {
+        "name": "Town Hall Service Door",
+        "description": "Thick oak panels banded with iron link the town hall to the storage barn.",
+        "initial_state": "closed",
+        "endpoints": [
+            {"zone": "village", "coords": (2, 1), "direction": "east"},
+            {"zone": "village", "coords": (3, 1), "direction": "west"},
+        ],
+    },
+    "crystal_gate_lattice": {
+        "name": "Crystal Gate Lattice",
+        "description": "A ribbed lattice of crystal bars can seal the passage between the gate and the watchpost.",
+        "initial_state": "closed",
+        "endpoints": [
+            {"zone": "dungeon_2", "coords": (3, 0), "direction": "south"},
+            {"zone": "dungeon_2", "coords": (3, 1), "direction": "north"},
+        ],
+    },
+}
+
+DOORS = {}
+DOOR_ENDPOINT_LOOKUP = {}
+
+
+def initialize_doors():
+    for door_id, spec in DOOR_DEFINITIONS.items():
+        endpoints = []
+        for endpoint in spec.get("endpoints", []):
+            coords = tuple(endpoint["coords"])
+            record = {
+                "zone": endpoint["zone"],
+                "coords": coords,
+                "direction": endpoint["direction"],
+            }
+            endpoints.append(record)
+            DOOR_ENDPOINT_LOOKUP[(record["zone"], coords[0], coords[1], record["direction"])] = door_id
+        DOORS[door_id] = {
+            "id": door_id,
+            "name": spec["name"],
+            "description": spec["description"],
+            "state": spec.get("initial_state", "closed"),
+            "endpoints": endpoints,
+        }
+
+
+initialize_doors()
 
 ABILITY_KEYS = ("str", "dex", "con", "int", "wis", "cha")
 DEFAULT_RACE = "Human"
@@ -1383,6 +1442,84 @@ def get_world_start(zone):
     return get_world(zone)["start"]
 
 
+def get_door_id(zone, x, y, direction):
+    return DOOR_ENDPOINT_LOOKUP.get((zone, x, y, direction))
+
+
+def is_door_open(door_id):
+    door = DOORS.get(door_id)
+    if not door:
+        return True
+    return door.get("state") == "open"
+
+
+def format_door_payload(door_id, facing_direction, zone, x, y):
+    door = DOORS.get(door_id)
+    if not door:
+        return None
+    other_side = None
+    for endpoint in door.get("endpoints", []):
+        coords = endpoint["coords"]
+        if endpoint["zone"] == zone and coords == (x, y) and endpoint["direction"] == facing_direction:
+            continue
+        other_room = get_room_info(endpoint["zone"], coords[0], coords[1])
+        other_side = {
+            "zone": endpoint["zone"],
+            "direction": endpoint["direction"],
+            "coords": {"x": coords[0], "y": coords[1]},
+            "room_name": other_room.get("name") if other_room else None,
+        }
+        break
+    return {
+        "id": door_id,
+        "name": door["name"],
+        "description": door["description"],
+        "state": door.get("state", "closed"),
+        "is_open": door.get("state") == "open",
+        "facing": facing_direction,
+        "other_side": other_side,
+    }
+
+
+def get_room_door_payload(zone, x, y):
+    seen = set()
+    doors_here = []
+    for direction in DIRECTION_VECTORS:
+        door_id = get_door_id(zone, x, y, direction)
+        if not door_id or door_id in seen:
+            continue
+        seen.add(door_id)
+        payload = format_door_payload(door_id, direction, zone, x, y)
+        if payload:
+            doors_here.append(payload)
+    return doors_here
+
+
+def build_exit_payload(zone, x, y):
+    width, height = get_world_dimensions(zone)
+    exits = {}
+    for direction, (dx, dy) in DIRECTION_VECTORS.items():
+        nx, ny = x + dx, y + dy
+        in_bounds = 0 <= nx < width and 0 <= ny < height
+        reason = None
+        door_id = get_door_id(zone, x, y, direction)
+        door_payload = format_door_payload(door_id, direction, zone, x, y) if door_id else None
+        can_travel = in_bounds
+        if not in_bounds:
+            reason = "No path in that direction."
+            can_travel = False
+        elif door_payload and not door_payload["is_open"]:
+            reason = f"{door_payload['name']} is closed."
+            can_travel = False
+        exits[direction] = {
+            "available": can_travel,
+            "reason": reason,
+            "door": door_payload,
+            "target": {"zone": zone, "x": nx, "y": ny} if in_bounds else None,
+        }
+    return exits
+
+
 def room_name(zone, x, y):
     return f"room_{zone}_{x}_{y}"
 
@@ -1963,6 +2100,15 @@ def send_room_state(username):
         item_payload.append(info)
     mobs_here = [format_mob_payload(mob) for mob in get_mobs_in_room(zone, x, y)]
     loot_here = format_loot_payload(get_loot_in_room(zone, x, y))
+    doors_here = get_room_door_payload(zone, x, y)
+    exits = build_exit_payload(zone, x, y)
+    warp_info = None
+    if room.get("travel_to"):
+        warp_info = {
+            "label": room.get("warp_label", "Warp Stone"),
+            "description": room.get("warp_description")
+            or "A rune-carved warp stone hums softly, awaiting activation.",
+        }
     payload = {
         "zone": zone,
         "world_name": get_world(zone)["name"],
@@ -1973,6 +2119,9 @@ def send_room_state(username):
         "players": occupants,
         "mobs": mobs_here,
         "loot": loot_here,
+        "doors": doors_here,
+        "exits": exits,
+        "warp_stone": warp_info,
         "character": {
             "race": player["race"],
             "char_class": player["char_class"],
@@ -2866,7 +3015,7 @@ def handle_travel_portal(username):
     leave_room(source_room)
     socketio.emit(
         "system_message",
-        {"text": f"{username} vanishes into the passage."},
+        {"text": f"{username} presses the warp stone and vanishes in a burst of light."},
         room=source_room,
     )
     broadcast_room_state(origin_zone, x, y)
@@ -2877,13 +3026,13 @@ def handle_travel_portal(username):
     join_room(destination_room)
     socketio.emit(
         "system_message",
-        {"text": f"{username} arrives in a shimmer of light."},
+        {"text": f"{username} coalesces beside the warp stone in a shimmer of light."},
         room=destination_room,
         include_self=False,
     )
     world_name = target_world.get("name", target_zone.title())
     dest_info = get_room_info(target_zone, tx, ty)
-    notify_player(username, f"You travel to {world_name}: {dest_info['name']}.")
+    notify_player(username, f"The warp stone pulls you to {world_name}: {dest_info['name']}.")
     send_room_state(username)
     trigger_aggressive_mobs_for_player(username, tx, ty)
     broadcast_room_state(target_zone, tx, ty)
@@ -2898,25 +3047,27 @@ def on_move(data):
     if not check_player_action_gate(username):
         return
 
-    direction = data.get("direction")
+    direction = (data.get("direction") or "").lower()
     player = players[username]
     old_x, old_y = player["x"], player["y"]
     zone = player.get("zone", DEFAULT_ZONE)
     width, height = get_world_dimensions(zone)
-    new_x, new_y = old_x, old_y
-
-    if direction == "north":
-        new_y -= 1
-    elif direction == "south":
-        new_y += 1
-    elif direction == "west":
-        new_x -= 1
-    elif direction == "east":
-        new_x += 1
+    if direction not in DIRECTION_VECTORS:
+        return
+    dx, dy = DIRECTION_VECTORS[direction]
+    new_x, new_y = old_x + dx, old_y + dy
 
     # Bounds check
     if not (0 <= new_x < width and 0 <= new_y < height):
         emit("system_message", {"text": "You cannot go that way."})
+        return
+
+    door_id = get_door_id(zone, old_x, old_y, direction)
+    if door_id and not is_door_open(door_id):
+        door = DOORS.get(door_id)
+        door_name = door.get("name") if door else "The door"
+        notify_player(username, f"{door_name} is closed.")
+        send_room_state(username)
         return
 
     old_room = room_name(zone, old_x, old_y)
@@ -2940,10 +3091,100 @@ def on_move(data):
 
     # Send new room state to moving player
     mark_player_action(player)
-    if handle_travel_portal(username):
-        return
     send_room_state(username)
     trigger_aggressive_mobs_for_player(username, player["x"], player["y"])
+
+
+@socketio.on("activate_warp")
+def on_activate_warp():
+    username = session.get("username")
+    if not username or username not in players:
+        return
+    if not check_player_action_gate(username):
+        return
+
+    player = players[username]
+    zone = player.get("zone", DEFAULT_ZONE)
+    x, y = player["x"], player["y"]
+    room = get_room_info(zone, x, y)
+    if not room.get("travel_to"):
+        notify_player(username, "No warp stone responds in this room.")
+        send_room_state(username)
+        return
+
+    mark_player_action(player)
+    if not handle_travel_portal(username):
+        notify_player(username, "The warp stone flickers but does not take hold.")
+        send_room_state(username)
+
+
+@socketio.on("door_action")
+def on_door_action(data):
+    username = session.get("username")
+    if not username or username not in players:
+        return
+    if not check_player_action_gate(username):
+        return
+
+    payload = data or {}
+    door_id = payload.get("door_id")
+    action = (payload.get("action") or "").lower()
+    door = DOORS.get(door_id)
+    if not door:
+        notify_player(username, "That door does not seem to exist.")
+        return
+
+    player = players[username]
+    zone = player.get("zone", DEFAULT_ZONE)
+    coords = (player["x"], player["y"])
+    facing = None
+    for endpoint in door.get("endpoints", []):
+        if endpoint["zone"] == zone and endpoint["coords"] == coords:
+            facing = endpoint["direction"]
+            break
+    if not facing:
+        notify_player(username, "You are not close enough to that door.")
+        send_room_state(username)
+        return
+
+    if action == "open":
+        if door.get("state") == "open":
+            notify_player(username, f"The {door['name']} is already open.")
+            return
+        door["state"] = "open"
+        verb = "opens"
+        feedback = f"You swing the {door['name']} open."
+    elif action == "close":
+        if door.get("state") == "closed":
+            notify_player(username, f"The {door['name']} is already closed.")
+            return
+        door["state"] = "closed"
+        verb = "closes"
+        feedback = f"You pull the {door['name']} closed."
+    else:
+        notify_player(username, "You must choose to open or close the door.")
+        return
+
+    mark_player_action(player)
+    notify_player(username, feedback)
+
+    touched_rooms = set()
+    for endpoint in door.get("endpoints", []):
+        z = endpoint["zone"]
+        ex, ey = endpoint["coords"]
+        room_key = (z, ex, ey)
+        if room_key in touched_rooms:
+            continue
+        touched_rooms.add(room_key)
+        room_channel = room_name(z, ex, ey)
+        include_self = not (z == zone and (ex, ey) == coords)
+        socketio.emit(
+            "system_message",
+            {"text": f"{username} {verb} the {door['name']}."},
+            room=room_channel,
+            include_self=include_self,
+        )
+        broadcast_room_state(z, ex, ey)
 
 
 @socketio.on("equip_weapon")
