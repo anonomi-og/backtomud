@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Back to MUD - New Character</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body class="characters-body">
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="header-title">
+          <div class="brand-mark">Back to MUD</div>
+          <div class="header-meta">Account: <strong>{{ account_username }}</strong></div>
+        </div>
+        <div class="header-actions">
+          <a class="ghost-button" href="{{ url_for('character_select') }}">Back to characters</a>
+          <a class="ghost-button" href="{{ url_for('logout') }}">Logout</a>
+        </div>
+      </header>
+
+      {% with messages = get_flashed_messages() %}
+        {% if messages %}
+          <ul class="flash flash-inline">
+            {% for msg in messages %}
+              <li>{{ msg }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endwith %}
+
+      <main class="characters-layout">
+        <section class="panel new-character-panel">
+          <div class="panel-header">
+            <h2>Create a character</h2>
+            <p class="panel-subtitle">Roll ability scores, choose a lineage, and write their legend.</p>
+          </div>
+
+          <form method="post" class="roll-form">
+            <input type="hidden" name="action" value="roll">
+            <button type="submit">Roll new abilities</button>
+          </form>
+
+          <form method="post" class="character-form">
+            <input type="hidden" name="action" value="create">
+
+            <label for="name">Character name</label>
+            <input id="name" type="text" name="name" maxlength="40" required>
+
+            <div class="form-row">
+              <div>
+                <label for="race">Race</label>
+                <select id="race" name="race" required>
+                  {% for race in race_options %}
+                    <option value="{{ race }}">{{ race }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label for="char_class">Class</label>
+                <select id="char_class" name="char_class" required>
+                  {% for cls in class_options %}
+                    <option value="{{ cls }}">{{ cls }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <div class="ability-grid">
+              {% for ability in ability_keys %}
+                <div class="ability-field">
+                  <label for="ability_{{ ability }}">{{ ability.upper() }}</label>
+                  <input
+                    id="ability_{{ ability }}"
+                    type="number"
+                    name="ability_{{ ability }}"
+                    min="1"
+                    max="30"
+                    value="{{ rolls[ability] }}"
+                    required
+                  >
+                </div>
+              {% endfor %}
+            </div>
+
+            <label for="bio">Bio <span class="field-note">(500 characters max)</span></label>
+            <textarea id="bio" name="bio" rows="3" maxlength="500" placeholder="A sentence or two that captures your hero."></textarea>
+
+            <label for="description">Description <span class="field-note">(1000 characters max)</span></label>
+            <textarea id="description" name="description" rows="5" maxlength="1000" placeholder="Appearance, motivations, or a tale worth telling."></textarea>
+
+            <div class="form-footer">
+              <button type="submit">Create character</button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

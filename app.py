@@ -22,6 +22,8 @@ VILLAGE_START = (2, 2)
 DUNGEON_1_START = (3, 0)
 DUNGEON_2_START = (4, 0)
 
+MAX_CHARACTERS_PER_ACCOUNT = 3
+
 VILLAGE_MAP = [
     [
         {
@@ -999,10 +1001,13 @@ def format_dice(dice):
     return f"{dice[0]}d{dice[1]}"
 
 
-def build_character_sheet(race_choice, class_choice):
+def build_character_sheet(race_choice, class_choice, base_scores=None):
     race = normalize_choice(race_choice, RACES, DEFAULT_RACE)
     char_class = normalize_choice(class_choice, CLASSES, DEFAULT_CLASS)
-    base_scores = generate_base_scores()
+    if base_scores:
+        base_scores = {ability: int(base_scores.get(ability, 10)) for ability in ABILITY_KEYS}
+    else:
+        base_scores = generate_base_scores()
     ability_scores = apply_race_modifiers(base_scores, race)
     ability_mods = {ability: ability_modifier(score) for ability, score in ability_scores.items()}
     class_data = CLASSES[char_class]
@@ -1088,7 +1093,16 @@ def roll_dice(dice):
     count, size = dice
     return sum(random.randint(1, size) for _ in range(max(0, count)))
 
-# --- DB helpers: very simple users table ---
+# --- DB helpers ---
+
+def _table_exists(cursor, table):
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    )
+    return cursor.fetchone() is not None
+
+
 def _column_exists(cursor, table, column):
     cursor.execute(f"PRAGMA table_info({table})")
     return any(row[1] == column for row in cursor.fetchall())
@@ -1098,137 +1112,113 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
+
     c.execute(
         """
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE IF NOT EXISTS accounts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
-            hp INTEGER NOT NULL DEFAULT 10,
-            atk INTEGER NOT NULL DEFAULT 2,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS characters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            name TEXT UNIQUE NOT NULL,
             race TEXT,
             char_class TEXT,
+            level INTEGER DEFAULT 1,
             str_score INTEGER,
             dex_score INTEGER,
             con_score INTEGER,
             int_score INTEGER,
             wis_score INTEGER,
             cha_score INTEGER,
+            hp INTEGER,
             current_hp INTEGER,
-            level INTEGER,
             equipped_weapon TEXT,
             weapon_inventory TEXT,
             xp INTEGER DEFAULT 0,
             gold INTEGER DEFAULT 0,
-            item_inventory TEXT
+            item_inventory TEXT,
+            bio TEXT,
+            description TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
         );
         """
     )
-    if not _column_exists(c, "users", "hp"):
-        c.execute("ALTER TABLE users ADD COLUMN hp INTEGER NOT NULL DEFAULT 10")
-    if not _column_exists(c, "users", "atk"):
-        c.execute("ALTER TABLE users ADD COLUMN atk INTEGER NOT NULL DEFAULT 2")
-    if not _column_exists(c, "users", "race"):
-        c.execute(f"ALTER TABLE users ADD COLUMN race TEXT DEFAULT '{DEFAULT_RACE}'")
-    if not _column_exists(c, "users", "char_class"):
-        c.execute(f"ALTER TABLE users ADD COLUMN char_class TEXT DEFAULT '{DEFAULT_CLASS}'")
-    for ability in ABILITY_KEYS:
-        column = f"{ability}_score"
-        if not _column_exists(c, "users", column):
-            c.execute(f"ALTER TABLE users ADD COLUMN {column} INTEGER DEFAULT 10")
-    if not _column_exists(c, "users", "current_hp"):
-        c.execute("ALTER TABLE users ADD COLUMN current_hp INTEGER")
-    if not _column_exists(c, "users", "level"):
-        c.execute("ALTER TABLE users ADD COLUMN level INTEGER DEFAULT 1")
-    if not _column_exists(c, "users", "equipped_weapon"):
-        c.execute(f"ALTER TABLE users ADD COLUMN equipped_weapon TEXT DEFAULT '{DEFAULT_WEAPON_KEY}'")
-    if not _column_exists(c, "users", "weapon_inventory"):
-        c.execute("ALTER TABLE users ADD COLUMN weapon_inventory TEXT")
-    if not _column_exists(c, "users", "xp"):
-        c.execute("ALTER TABLE users ADD COLUMN xp INTEGER DEFAULT 0")
-    if not _column_exists(c, "users", "gold"):
-        c.execute("ALTER TABLE users ADD COLUMN gold INTEGER DEFAULT 0")
-    if not _column_exists(c, "users", "item_inventory"):
-        c.execute("ALTER TABLE users ADD COLUMN item_inventory TEXT")
-    c.execute("UPDATE users SET hp = COALESCE(hp, 10)")
-    c.execute("UPDATE users SET atk = COALESCE(atk, 2)")
-    c.execute("UPDATE users SET xp = COALESCE(xp, 0)")
-    c.execute("UPDATE users SET gold = COALESCE(gold, 0)")
 
-    # Backfill missing character sheets
-    c.execute(
-        """
-        SELECT id, username, race, char_class, hp, current_hp, level,
-               str_score, dex_score, con_score, int_score, wis_score, cha_score,
-               equipped_weapon, weapon_inventory, xp, gold, item_inventory
-        FROM users
-        """
-    )
-    for row in c.fetchall():
-        needs_sheet = (
-            row["race"] is None
-            or row["char_class"] is None
-            or any(row[f"{ability}_score"] is None for ability in ABILITY_KEYS)
-        )
-        inventory = deserialize_inventory(row["weapon_inventory"])
-        items = deserialize_items(row["item_inventory"])
-        char_class = row["char_class"] or DEFAULT_CLASS
-        if not inventory:
-            inventory = default_inventory_for_class(char_class)
-        equipped_weapon = ensure_equipped_weapon(row["equipped_weapon"], inventory)
+    for column, default in (
+        ("bio", ""),
+        ("description", ""),
+    ):
+        if not _column_exists(c, "characters", column):
+            default_literal = "''" if default == "" else f"'{default}'"
+            c.execute(
+                f"ALTER TABLE characters ADD COLUMN {column} TEXT DEFAULT {default_literal}"
+            )
 
-        if needs_sheet:
-            sheet = build_character_sheet(row["race"] or DEFAULT_RACE, row["char_class"] or DEFAULT_CLASS)
-            ability_values = sheet["abilities"]
-            c.execute(
-                """
-                UPDATE users
-                SET race = ?, char_class = ?, level = ?, hp = ?, current_hp = ?,
-                    atk = ?, str_score = ?, dex_score = ?, con_score = ?,
-                    int_score = ?, wis_score = ?, cha_score = ?,
-                    equipped_weapon = ?, weapon_inventory = ?,
-                    xp = ?, gold = ?, item_inventory = ?
-                WHERE id = ?
-                """,
-                (
-                    sheet["race"],
-                    sheet["char_class"],
-                    sheet["level"],
-                    sheet["max_hp"],
-                    sheet["current_hp"],
-                    sheet["attack_bonus"],
-                    ability_values["str"],
-                    ability_values["dex"],
-                    ability_values["con"],
-                    ability_values["int"],
-                    ability_values["wis"],
-                    ability_values["cha"],
-                    sheet["equipped_weapon"],
-                    serialize_inventory(sheet["inventory"]),
-                    row["xp"] if row["xp"] is not None else 0,
-                    row["gold"] if row["gold"] is not None else 0,
-                    serialize_items([]),
-                    row["id"],
-                ),
-            )
-        else:
-            if row["current_hp"] is None:
-                c.execute("UPDATE users SET current_hp = hp WHERE id = ?", (row["id"],))
-            c.execute(
-                """
-                UPDATE users
-                SET equipped_weapon = ?, weapon_inventory = ?,
-                    xp = COALESCE(xp, 0), gold = COALESCE(gold, 0),
-                    item_inventory = ?
-                WHERE id = ?
-                """,
-                (
-                    equipped_weapon,
-                    serialize_inventory(inventory),
-                    serialize_items(items),
-                    row["id"],
-                ),
-            )
+    if _table_exists(c, "users"):
+        c.execute("SELECT COUNT(*) FROM accounts")
+        if (c.fetchone() or [0])[0] == 0:
+            c.execute("SELECT * FROM users")
+            legacy_rows = c.fetchall()
+            for row in legacy_rows:
+                username = row["username"]
+                password_hash = row["password_hash"]
+                c.execute(
+                    "INSERT OR IGNORE INTO accounts (username, password_hash) VALUES (?, ?)",
+                    (username, password_hash),
+                )
+                c.execute("SELECT id FROM accounts WHERE username = ?", (username,))
+                account_row = c.fetchone()
+                if not account_row:
+                    continue
+                account_id = account_row["id"]
+                char_name = username
+                inventory = deserialize_inventory(row["weapon_inventory"])
+                if not inventory:
+                    inventory = default_inventory_for_class(row["char_class"] or DEFAULT_CLASS)
+                equipped_weapon = ensure_equipped_weapon(row["equipped_weapon"], inventory)
+                items = deserialize_items(row["item_inventory"])
+                c.execute(
+                    """
+                    INSERT OR IGNORE INTO characters (
+                        account_id, name, race, char_class, level,
+                        str_score, dex_score, con_score, int_score, wis_score, cha_score,
+                        hp, current_hp, equipped_weapon, weapon_inventory,
+                        xp, gold, item_inventory, bio, description
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        account_id,
+                        char_name,
+                        row["race"] or DEFAULT_RACE,
+                        row["char_class"] or DEFAULT_CLASS,
+                        row["level"] or 1,
+                        row["str_score"] or 10,
+                        row["dex_score"] or 10,
+                        row["con_score"] or 10,
+                        row["int_score"] or 10,
+                        row["wis_score"] or 10,
+                        row["cha_score"] or 10,
+                        row["hp"] or 10,
+                        row["current_hp"] or row["hp"] or 10,
+                        equipped_weapon,
+                        serialize_inventory(inventory),
+                        row["xp"] or 0,
+                        row["gold"] or 0,
+                        serialize_items(items),
+                        "",
+                        "",
+                    ),
+                )
 
     conn.commit()
     conn.close()
@@ -1236,36 +1226,105 @@ def init_db():
         spawn_initial_mobs()
 
 
-def get_user(username):
+def get_account(username):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE username = ?", (username,))
+    c.execute("SELECT * FROM accounts WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
-    if row:
-        return dict(row)
-    return None
+    return dict(row) if row else None
 
 
-def create_user(username, password, race_choice, class_choice):
-    sheet = build_character_sheet(race_choice, class_choice)
-    ability_values = sheet["abilities"]
+def get_account_by_id(account_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def create_account(username, password):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     password_hash = generate_password_hash(password)
     c.execute(
+        "INSERT INTO accounts (username, password_hash) VALUES (?, ?)",
+        (username, password_hash),
+    )
+    conn.commit()
+    conn.close()
+
+
+def count_account_characters(account_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM characters WHERE account_id = ?", (account_id,))
+    count = c.fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_account_characters(account_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute(
+        "SELECT * FROM characters WHERE account_id = ? ORDER BY created_at",
+        (account_id,),
+    )
+    rows = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return rows
+
+
+def get_character_by_id(character_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM characters WHERE id = ?", (character_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_character_by_name(name):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM characters WHERE name = ?", (name,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def create_character(
+    account_id,
+    name,
+    race_choice,
+    class_choice,
+    ability_scores,
+    bio="",
+    description="",
+):
+    sheet = build_character_sheet(race_choice, class_choice, base_scores=ability_scores)
+    ability_values = sheet["abilities"]
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
         """
-        INSERT INTO users (
-            username, password_hash, race, char_class, level,
+        INSERT INTO characters (
+            account_id, name, race, char_class, level,
             str_score, dex_score, con_score, int_score, wis_score, cha_score,
-            hp, current_hp, atk, equipped_weapon, weapon_inventory,
-            xp, gold, item_inventory
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            hp, current_hp, equipped_weapon, weapon_inventory,
+            xp, gold, item_inventory, bio, description
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            username,
-            password_hash,
+            account_id,
+            name,
             sheet["race"],
             sheet["char_class"],
             sheet["level"],
@@ -1277,75 +1336,96 @@ def create_user(username, password, race_choice, class_choice):
             ability_values["cha"],
             sheet["max_hp"],
             sheet["current_hp"],
-            sheet["attack_bonus"],
             sheet["equipped_weapon"],
             serialize_inventory(sheet["inventory"]),
             0,
             0,
             serialize_items([]),
+            bio or "",
+            description or "",
         ),
     )
     conn.commit()
     conn.close()
 
 
-def update_user_current_hp(username, hp):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE users SET current_hp = ? WHERE username = ?", (hp, username))
-    conn.commit()
-    conn.close()
-
-
-def update_user_equipped_weapon(username, weapon_key):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE users SET equipped_weapon = ? WHERE username = ?", (weapon_key, username))
-    conn.commit()
-    conn.close()
-
-
-def update_user_weapon_inventory(username, inventory):
+def delete_character(account_id, character_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
-        "UPDATE users SET weapon_inventory = ? WHERE username = ?",
-        (serialize_inventory(inventory), username),
+        "DELETE FROM characters WHERE id = ? AND account_id = ?",
+        (character_id, account_id),
+    )
+    deleted = c.rowcount
+    conn.commit()
+    conn.close()
+    return deleted > 0
+
+
+def update_character_current_hp(character_id, hp):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "UPDATE characters SET current_hp = ? WHERE id = ?",
+        (hp, character_id),
     )
     conn.commit()
     conn.close()
 
 
-def update_user_gold(username, gold):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE users SET gold = ? WHERE username = ?", (gold, username))
-    conn.commit()
-    conn.close()
-
-
-def update_user_xp(username, xp):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE users SET xp = ? WHERE username = ?", (xp, username))
-    conn.commit()
-    conn.close()
-
-
-def update_user_items(username, items):
+def update_character_equipped_weapon(character_id, weapon_key):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
-        "UPDATE users SET item_inventory = ? WHERE username = ?",
-        (serialize_items(items), username),
+        "UPDATE characters SET equipped_weapon = ? WHERE id = ?",
+        (weapon_key, character_id),
     )
     conn.commit()
     conn.close()
 
 
+def update_character_weapon_inventory(character_id, inventory):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "UPDATE characters SET weapon_inventory = ? WHERE id = ?",
+        (serialize_inventory(inventory), character_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_character_gold(character_id, gold):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE characters SET gold = ? WHERE id = ?", (gold, character_id))
+    conn.commit()
+    conn.close()
+
+
+def update_character_xp(character_id, xp):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE characters SET xp = ? WHERE id = ?", (xp, character_id))
+    conn.commit()
+    conn.close()
+
+
+def update_character_items(character_id, items):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "UPDATE characters SET item_inventory = ? WHERE id = ?",
+        (serialize_items(items), character_id),
+    )
+    conn.commit()
+    conn.close()
 # --- In-memory game state (per container, MVP only) ---
-# players[username] = {
+# players[character_name] = {
 #     "sid": socket_id,
+#     "character_id": int,
+#     "account_id": int,
+#     "name": str,
 #     "x": int,
 #     "y": int,
 #     "hp": int,
@@ -1713,7 +1793,7 @@ def mob_combat_loop(mob_id):
         mob["last_attack_ts"] = now
 
         target["hp"] = clamp_hp(target["hp"] - damage, target["max_hp"])
-        update_user_current_hp(username, target["hp"])
+        update_character_current_hp(target["character_id"], target["hp"])
         room = room_name(mob.get("zone", DEFAULT_ZONE), mob["x"], mob["y"])
         dmg_type = damage_info.get("type")
         suffix = f" {dmg_type} damage" if dmg_type else " damage"
@@ -1997,6 +2077,11 @@ def build_player_state(user_record, sid):
         "zone": DEFAULT_ZONE,
         "x": start_x,
         "y": start_y,
+        "character_id": user_record.get("id"),
+        "account_id": user_record.get("account_id"),
+        "name": user_record.get("name"),
+        "bio": user_record.get("bio") or "",
+        "description": user_record.get("description") or "",
     }
     state.update(derived)
     state["inventory"] = list(state.get("inventory", []))
@@ -2060,7 +2145,7 @@ def equip_weapon_for_player(username, weapon_identifier):
         return False, f"{get_weapon(weapon_key)['name']} is already equipped."
 
     apply_weapon_to_player_state(player, weapon_key)
-    update_user_equipped_weapon(username, weapon_key)
+    update_character_equipped_weapon(player["character_id"], weapon_key)
     send_room_state(username)
 
     zone = player.get("zone", DEFAULT_ZONE)
@@ -2123,6 +2208,10 @@ def send_room_state(username):
         "exits": exits,
         "warp_stone": warp_info,
         "character": {
+            "id": player.get("character_id"),
+            "name": player.get("name"),
+            "bio": player.get("bio", ""),
+            "description": player.get("description", ""),
             "race": player["race"],
             "char_class": player["char_class"],
             "level": player.get("level", 1),
@@ -2295,7 +2384,7 @@ def execute_spell(caster_name, caster, spell_key, spell, target_player, target_n
         damage += caster.get("damage_bonus", 0)
         damage = max(1, damage)
         target_player["hp"] = clamp_hp(target_player["hp"] - damage, target_player["max_hp"])
-        update_user_current_hp(target_name, target_player["hp"])
+        update_character_current_hp(target_player["character_id"], target_player["hp"])
         damage_type = damage_info.get("damage_type")
         dmg_suffix = f" {damage_type} damage" if damage_type else " damage"
         message = f"{caster_name} casts {spell['name']} at {target_name}, dealing {damage}{dmg_suffix}!"
@@ -2325,7 +2414,7 @@ def execute_spell(caster_name, caster, spell_key, spell, target_player, target_n
         before = target["hp"]
         target["hp"] = clamp_hp(target["hp"] + amount, target["max_hp"])
         restored = target["hp"] - before
-        update_user_current_hp(target_label, target["hp"])
+        update_character_current_hp(target["character_id"], target["hp"])
         if restored <= 0:
             message = f"{spell['name']} has no effect on {target_label}."
         else:
@@ -2396,7 +2485,7 @@ def respawn_player(username):
     start_x, start_y = get_world_start(DEFAULT_ZONE)
     player["x"], player["y"] = start_x, start_y
     player["hp"] = player["max_hp"]
-    update_user_current_hp(username, player["hp"])
+    update_character_current_hp(player["character_id"], player["hp"])
     player["active_effects"] = []
     recalculate_player_stats(player)
 
@@ -2537,14 +2626,14 @@ def award_xp(username, amount):
     player = players.get(username)
     if player:
         player["xp"] = player.get("xp", 0) + amount
-        update_user_xp(username, player["xp"])
+        update_character_xp(player["character_id"], player["xp"])
         notify_player(username, f"You gain {amount} XP.")
     else:
-        record = get_user(username)
+        record = get_character_by_name(username)
         if record is None:
             return
         new_total = (record.get("xp") or 0) + amount
-        update_user_xp(username, new_total)
+        update_character_xp(record["id"], new_total)
 
 
 def collect_item_for_player(player, username, item_key):
@@ -2553,17 +2642,17 @@ def collect_item_for_player(player, username, item_key):
     if item_key in GENERAL_ITEMS:
         items = player.setdefault("items", [])
         items.append(item_key)
-        update_user_items(username, items)
+        update_character_items(player["character_id"], items)
         return GENERAL_ITEMS[item_key]["name"]
     if item_key in WEAPONS:
         inventory = player.setdefault("inventory", [])
         if item_key not in inventory:
             inventory.append(item_key)
-            update_user_weapon_inventory(username, inventory)
+            update_character_weapon_inventory(player["character_id"], inventory)
         return WEAPONS[item_key]["name"]
     items = player.setdefault("items", [])
     items.append(item_key)
-    update_user_items(username, items)
+    update_character_items(player["character_id"], items)
     return item_key.replace("_", " ").title()
 
 
@@ -2689,27 +2778,27 @@ def pickup_loot(username, loot_identifier):
     if match.get("type") == "gold":
         amount = int(match.get("amount") or 0)
         player["gold"] = player.get("gold", 0) + amount
-        update_user_gold(username, player["gold"])
+        update_character_gold(player["character_id"], player["gold"])
         message = f"{username} scoops up {amount} gold coins."
     else:
         item_key = match.get("item_key")
         if item_key in GENERAL_ITEMS:
             items = player.setdefault("items", [])
             items.append(item_key)
-            update_user_items(username, items)
+            update_character_items(player["character_id"], items)
             item_name = GENERAL_ITEMS[item_key]["name"]
             message = f"{username} picks up {item_name}."
         elif item_key in WEAPONS:
             inventory = player.setdefault("inventory", [])
             if item_key not in inventory:
                 inventory.append(item_key)
-                update_user_weapon_inventory(username, inventory)
+                update_character_weapon_inventory(player["character_id"], inventory)
             item_name = WEAPONS[item_key]["name"]
             message = f"{username} claims {item_name}."
         else:
             items = player.setdefault("items", [])
             items.append(item_key)
-            update_user_items(username, items)
+            update_character_items(player["character_id"], items)
             item_name = match.get("name", "an item")
             message = f"{username} picks up {item_name}."
     socketio.emit("system_message", {"text": message}, room=room)
@@ -2839,7 +2928,7 @@ def resolve_attack(attacker_name, target_name):
         attacker["weapon"], ability_mod, crit=crit, bonus_damage=attacker.get("damage_bonus", 0)
     )
     target["hp"] = clamp_hp(target["hp"] - damage, target["max_hp"])
-    update_user_current_hp(target_name, target["hp"])
+    update_character_current_hp(target["character_id"], target["hp"])
 
     bonus_text = "".join(f" + {label} {value}" for label, value in bonus_rolls)
     attack_detail = (
@@ -2880,47 +2969,175 @@ def login():
             return redirect(url_for("login"))
 
         if action == "register":
-            if get_user(username):
+            if get_account(username):
                 flash("Username already taken.")
                 return redirect(url_for("login"))
-            race_choice = normalize_choice(request.form.get("race"), RACES, None)
-            class_choice = normalize_choice(request.form.get("char_class"), CLASSES, None)
-            if not race_choice or not class_choice:
-                flash("Select a valid race and class to register.")
-                return redirect(url_for("login"))
-            create_user(username, password, race_choice, class_choice)
+            create_account(username, password)
             flash("Account created. You can now log in.")
             return redirect(url_for("login"))
-
         elif action == "login":
-            user = get_user(username)
-            if not user or not check_password_hash(user["password_hash"], password):
+            account = get_account(username)
+            if not account or not check_password_hash(account["password_hash"], password):
                 flash("Invalid username or password.")
                 return redirect(url_for("login"))
+            session.clear()
+            session["account_id"] = account["id"]
+            session["account_username"] = account["username"]
+            return redirect(url_for("character_select"))
 
-            session["username"] = username
-            return redirect(url_for("game"))
+        flash("Invalid action.")
+        return redirect(url_for("login"))
 
-    if "username" in session:
-        return redirect(url_for("game"))
-    return render_template("login.html", race_options=RACE_OPTIONS, class_options=CLASS_OPTIONS)
+    if session.get("account_id"):
+        return redirect(url_for("character_select"))
+    return render_template("login.html")
+
+
+@app.route("/characters")
+def character_select():
+    if "account_id" not in session:
+        return redirect(url_for("login"))
+    account_id = session["account_id"]
+    characters = get_account_characters(account_id)
+    return render_template(
+        "characters.html",
+        account_username=session.get("account_username"),
+        characters=characters,
+        max_characters=MAX_CHARACTERS_PER_ACCOUNT,
+    )
+
+
+@app.route("/characters/new", methods=["GET", "POST"])
+def new_character():
+    if "account_id" not in session:
+        return redirect(url_for("login"))
+    account_id = session["account_id"]
+    character_count = count_account_characters(account_id)
+    if character_count >= MAX_CHARACTERS_PER_ACCOUNT and request.method == "GET":
+        flash("You already have the maximum number of characters.")
+        return redirect(url_for("character_select"))
+
+    rolls = session.get("rolled_scores")
+    if not rolls:
+        rolls = generate_base_scores()
+    rolls = {ability: int((rolls or {}).get(ability, 10)) for ability in ABILITY_KEYS}
+    session["rolled_scores"] = rolls
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "roll":
+            session["rolled_scores"] = generate_base_scores()
+            return redirect(url_for("new_character"))
+        elif action == "create":
+            if count_account_characters(account_id) >= MAX_CHARACTERS_PER_ACCOUNT:
+                flash("You already have the maximum number of characters.")
+                return redirect(url_for("character_select"))
+            name = request.form.get("name", "").strip()
+            race_choice = request.form.get("race")
+            class_choice = request.form.get("char_class")
+            bio = (request.form.get("bio") or "").strip()
+            description = (request.form.get("description") or "").strip()
+            if not name:
+                flash("Character name is required.")
+                return redirect(url_for("new_character"))
+            if len(name) > 40:
+                flash("Character names must be 40 characters or fewer.")
+                return redirect(url_for("new_character"))
+            if get_character_by_name(name):
+                flash("Character name already taken.")
+                return redirect(url_for("new_character"))
+            race_choice = normalize_choice(race_choice, RACES, None)
+            class_choice = normalize_choice(class_choice, CLASSES, None)
+            if not race_choice or not class_choice:
+                flash("Select a valid race and class.")
+                return redirect(url_for("new_character"))
+            ability_scores = {}
+            try:
+                for ability in ABILITY_KEYS:
+                    raw = request.form.get(f"ability_{ability}")
+                    if raw is None or raw.strip() == "":
+                        raw = rolls.get(ability)
+                    value = int(raw)
+                    ability_scores[ability] = max(1, min(value, 30))
+            except (TypeError, ValueError):
+                flash("Ability scores must be numbers.")
+                return redirect(url_for("new_character"))
+            if len(bio) > 500 or len(description) > 1000:
+                flash("Bio or description is too long.")
+                return redirect(url_for("new_character"))
+            create_character(account_id, name, race_choice, class_choice, ability_scores, bio, description)
+            session.pop("rolled_scores", None)
+            flash(f"{name} has been created.")
+            return redirect(url_for("character_select"))
+
+    return render_template(
+        "new_character.html",
+        account_username=session.get("account_username"),
+        rolls=rolls,
+        race_options=RACE_OPTIONS,
+        class_options=CLASS_OPTIONS,
+        ability_keys=ABILITY_KEYS,
+        max_characters=MAX_CHARACTERS_PER_ACCOUNT,
+    )
+
+
+@app.route("/characters/play/<int:character_id>", methods=["POST"])
+def play_character(character_id):
+    if "account_id" not in session:
+        return redirect(url_for("login"))
+    record = get_character_by_id(character_id)
+    if not record or record["account_id"] != session["account_id"]:
+        flash("Character not found.")
+        return redirect(url_for("character_select"))
+    session["character_id"] = record["id"]
+    session["character_name"] = record["name"]
+    session.pop("rolled_scores", None)
+    existing = players.get(record["name"])
+    if existing:
+        update_character_current_hp(existing["character_id"], existing["hp"])
+        players.pop(record["name"], None)
+    return redirect(url_for("game"))
+
+
+@app.route("/characters/delete/<int:character_id>", methods=["POST"])
+def delete_character_route(character_id):
+    if "account_id" not in session:
+        return redirect(url_for("login"))
+    record = get_character_by_id(character_id)
+    if not record or record["account_id"] != session["account_id"]:
+        flash("Character not found.")
+        return redirect(url_for("character_select"))
+    players.pop(record["name"], None)
+    if session.get("character_id") == character_id:
+        session.pop("character_id", None)
+        session.pop("character_name", None)
+    if delete_character(session["account_id"], character_id):
+        flash(f"{record['name']} was deleted.")
+    else:
+        flash("Unable to delete character.")
+    return redirect(url_for("character_select"))
 
 
 @app.route("/game")
 def game():
-    if "username" not in session:
+    if "account_id" not in session:
         return redirect(url_for("login"))
-    return render_template("game.html", username=session["username"])
+    if "character_id" not in session:
+        return redirect(url_for("character_select"))
+    return render_template(
+        "game.html",
+        account_username=session.get("account_username"),
+        character_name=session.get("character_name"),
+    )
 
 
 @app.route("/logout")
 def logout():
-    username = session.pop("username", None)
-    # also clean up in-memory state if they had one
-    if username and username in players:
-        update_user_current_hp(username, players[username]["hp"])
-        # We can't easily emit here without a socket, so leave it to disconnect handler if active
-        players.pop(username, None)
+    character_name = session.get("character_name")
+    if character_name and character_name in players:
+        update_character_current_hp(players[character_name]["character_id"], players[character_name]["hp"])
+        players.pop(character_name, None)
+    session.clear()
     return redirect(url_for("login"))
 
 
@@ -2928,40 +3145,39 @@ def logout():
 
 @socketio.on("connect")
 def on_connect():
-    if "username" not in session:
-        # Not logged in, refuse connection
+    if "account_id" not in session or "character_id" not in session or "character_name" not in session:
         disconnect()
         return
-    # connection accepted; actual game join will be done in "join_game"
     emit("connected", {"message": "Connected to game server."})
 
 
 @socketio.on("join_game")
 def on_join_game():
-    username = session.get("username")
-    if not username:
+    account_id = session.get("account_id")
+    character_id = session.get("character_id")
+    character_name = session.get("character_name")
+    if not account_id or not character_id or not character_name:
         emit("system_message", {"text": "You are not logged in. Please reconnect."})
         disconnect()
         return
 
-    user_record = get_user(username)
-    if not user_record:
+    record = get_character_by_id(character_id)
+    if not record or record.get("account_id") != account_id or record.get("name") != character_name:
         emit("system_message", {"text": "Unable to load your character. Please log in again."})
         disconnect()
         return
 
-    if username not in players:
-        players[username] = build_player_state(user_record, request.sid)
+    if character_name not in players:
+        state = build_player_state(record, request.sid)
     else:
-        existing = players[username]
+        existing = players[character_name]
         preserved_zone = existing.get("zone", DEFAULT_ZONE)
         start_x, start_y = get_world_start(preserved_zone)
         preserved_position = (existing.get("x", start_x), existing.get("y", start_y))
         preserved_hp = clamp_hp(existing.get("hp"), existing.get("max_hp", 1))
         preserved_effects = list(existing.get("active_effects", []))
         preserved_cooldowns = dict(existing.get("cooldowns", {}))
-
-        state = build_player_state(user_record, request.sid)
+        state = build_player_state(record, request.sid)
         state["zone"] = preserved_zone
         state["x"], state["y"] = preserved_position
         state["hp"] = preserved_hp
@@ -2970,21 +3186,23 @@ def on_join_game():
         state["last_action_ts"] = existing.get("last_action_ts", 0)
         state["searched_rooms"] = set(existing.get("searched_rooms", set()))
         recalculate_player_stats(state)
-        players[username] = state
 
-    x = players[username]["x"]
-    y = players[username]["y"]
-    zone = players[username].get("zone", DEFAULT_ZONE)
+    state["character_id"] = record["id"]
+    state["account_id"] = account_id
+    state["name"] = record["name"]
+    players[character_name] = state
+
+    x = state["x"]
+    y = state["y"]
+    zone = state.get("zone", DEFAULT_ZONE)
     rname = room_name(zone, x, y)
 
     join_room(rname)
 
-    # Notify others in the room
-    emit("system_message", {"text": f"{username} has entered the room."}, room=rname, include_self=False)
+    emit("system_message", {"text": f"{character_name} has entered the room."}, room=rname, include_self=False)
 
-    # Send room state to this player
-    send_room_state(username)
-    trigger_aggressive_mobs_for_player(username, x, y)
+    send_room_state(character_name)
+    trigger_aggressive_mobs_for_player(character_name, x, y)
 
 
 def handle_travel_portal(username):
@@ -3041,7 +3259,7 @@ def handle_travel_portal(username):
 
 @socketio.on("move")
 def on_move(data):
-    username = session.get("username")
+    username = session.get("character_name")
     if not username or username not in players:
         return
     if not check_player_action_gate(username):
@@ -3097,7 +3315,7 @@ def on_move(data):
 
 @socketio.on("activate_warp")
 def on_activate_warp():
-    username = session.get("username")
+    username = session.get("character_name")
     if not username or username not in players:
         return
     if not check_player_action_gate(username):
@@ -3120,7 +3338,7 @@ def on_activate_warp():
 
 @socketio.on("door_action")
 def on_door_action(data):
-    username = session.get("username")
+    username = session.get("character_name")
     if not username or username not in players:
         return
     if not check_player_action_gate(username):
@@ -3189,7 +3407,7 @@ def on_door_action(data):
 
 @socketio.on("equip_weapon")
 def on_equip_weapon(data):
-    username = session.get("username")
+    username = session.get("character_name")
     if not username or username not in players:
         return
     weapon_key = (data or {}).get("weapon") or (data or {}).get("weapon_key")
@@ -3200,7 +3418,7 @@ def on_equip_weapon(data):
 
 @socketio.on("cast_spell")
 def on_cast_spell(data):
-    username = session.get("username")
+    username = session.get("character_name")
     if not username or username not in players:
         return
     payload = data or {}
@@ -3213,7 +3431,7 @@ def on_cast_spell(data):
 
 @socketio.on("pickup_loot")
 def on_pickup_loot(data):
-    username = session.get("username")
+    username = session.get("character_name")
     if not username or username not in players:
         return
     payload = data or {}
@@ -3225,7 +3443,7 @@ def on_pickup_loot(data):
 
 @socketio.on("search")
 def on_search_event(data):
-    username = session.get("username")
+    username = session.get("character_name")
     if not username or username not in players:
         return
     success, message = perform_search_action(username)
@@ -3235,7 +3453,7 @@ def on_search_event(data):
 
 @socketio.on("chat")
 def on_chat(data):
-    username = session.get("username")
+    username = session.get("character_name")
     if not username or username not in players:
         return
 
@@ -3278,7 +3496,7 @@ def on_disconnect():
         # Notify others
         if rname:
             emit("system_message", {"text": f"{username} has disconnected."}, room=rname)
-        update_user_current_hp(username, players[username]["hp"])
+        update_character_current_hp(players[username]["character_id"], players[username]["hp"])
         # Remove from players (MVP: no persistent positions)
         players.pop(username, None)
 

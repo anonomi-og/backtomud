@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MUD MVP - Game</title>
+    <title>Back to MUD - Game</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   </head>
@@ -12,7 +12,10 @@
       <header class="app-header">
         <div class="header-title">
           <div class="brand-mark">Back to MUD</div>
-          <div class="header-meta">Logged in as <strong>{{ username }}</strong></div>
+          <div class="header-meta">
+            <span>Account: <strong>{{ account_username }}</strong></span>
+            <span>Character: <strong>{{ character_name }}</strong></span>
+          </div>
         </div>
         <div class="header-actions">
           <a class="ghost-button" href="{{ url_for('logout') }}">Logout</a>
@@ -74,7 +77,9 @@
               <div class="character-card">
                 <h3>Your character</h3>
                 <div class="character-stats">
-                  <p><strong>Identity:</strong> <span id="char-summary">--</span></p>
+                  <p><strong>Summary:</strong> <span id="char-summary">--</span></p>
+                  <p id="character-bio" class="character-blurb" hidden></p>
+                  <p id="character-description" class="character-description" hidden></p>
                   <p><strong>HP:</strong> <span id="stat-hp">--</span></p>
                   <p><strong>Armor Class:</strong> <span id="stat-ac">--</span></p>
                   <p><strong>Proficiency:</strong> <span id="stat-prof">--</span></p>
@@ -158,7 +163,8 @@
     </div>
 
     <script>
-      const USERNAME = "{{ username }}";
+      const USERNAME = "{{ character_name }}";
+      const ACCOUNT_NAME = "{{ account_username }}";
     </script>
     <script src="{{ url_for('static', filename='game.js') }}"></script>
   </body>
