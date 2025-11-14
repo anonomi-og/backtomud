@@ -81,6 +81,72 @@ WEAPONS = {
     "sacred_flame": {"name": "Sacred Flame", "dice": (1, 8), "ability": "wis", "damage_type": "radiant"},
 }
 
+GENERAL_ITEMS = {
+    "rat_tail": {
+        "name": "Rat Tail Token",
+        "description": "A grisly token proving your victory over a giant rat.",
+        "rarity": "common",
+    },
+    "goblin_bugle": {
+        "name": "Goblin Bugle",
+        "description": "A dented horn used to rally goblins. It no longer sounds quite right.",
+        "rarity": "common",
+    },
+    "kobold_sling": {
+        "name": "Kobold Sling",
+        "description": "A worn leather sling sized for small hands. Still functional.",
+        "rarity": "common",
+    },
+}
+
+MOB_TEMPLATES = {
+    "giant_rat": {
+        "name": "Giant Rat",
+        "ac": 12,
+        "hp": 7,
+        "hp_dice": "2d6",
+        "speed": 30,
+        "abilities": {"str": 7, "dex": 15, "con": 11, "int": 2, "wis": 10, "cha": 4},
+        "attack_bonus": 4,
+        "damage": {"dice": (1, 4), "bonus": 2, "type": "piercing"},
+        "xp": 25,
+        "initial_spawns": 2,
+        "gold_range": (1, 6),
+        "loot": [("rat_tail", 0.6)],
+        "description": "A sewer-dwelling rat the size of a hound, eyes gleaming with hunger.",
+    },
+    "goblin": {
+        "name": "Goblin",
+        "ac": 15,
+        "hp": 7,
+        "hp_dice": "2d6",
+        "speed": 30,
+        "abilities": {"str": 8, "dex": 14, "con": 10, "int": 10, "wis": 8, "cha": 8},
+        "attack_bonus": 4,
+        "damage": {"dice": (1, 6), "bonus": 2, "type": "slashing"},
+        "xp": 50,
+        "initial_spawns": 2,
+        "gold_range": (2, 12),
+        "loot": [("goblin_bugle", 0.4), ("dagger", 0.2)],
+        "description": "A wiry goblin clutching rusted blades and muttering in guttural tones.",
+    },
+    "kobold": {
+        "name": "Kobold",
+        "ac": 12,
+        "hp": 5,
+        "hp_dice": "2d6-2",
+        "speed": 30,
+        "abilities": {"str": 7, "dex": 15, "con": 9, "int": 8, "wis": 7, "cha": 8},
+        "attack_bonus": 4,
+        "damage": {"dice": (1, 4), "bonus": 2, "type": "piercing"},
+        "xp": 25,
+        "initial_spawns": 2,
+        "gold_range": (1, 8),
+        "loot": [("kobold_sling", 0.5)],
+        "description": "A scaly kobold scouting the area with wary, darting eyes.",
+    },
+}
+
 SPELLS = {
     "magic_missile": {
         "name": "Magic Missile",
@@ -303,6 +369,36 @@ def deserialize_inventory(payload):
     return [part.strip() for part in str(payload).split(",") if part.strip() in WEAPONS]
 
 
+def serialize_items(items):
+    return json.dumps(items or [])
+
+
+def deserialize_items(payload):
+    if not payload:
+        return []
+    if isinstance(payload, list):
+        return [item for item in payload if item in GENERAL_ITEMS]
+    try:
+        data = json.loads(payload)
+        if isinstance(data, list):
+            return [item for item in data if item in GENERAL_ITEMS]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return [part.strip() for part in str(payload).split(",") if part.strip() in GENERAL_ITEMS]
+
+
+def format_item_payload(key):
+    item = GENERAL_ITEMS.get(key)
+    if not item:
+        return None
+    return {
+        "key": key,
+        "name": item.get("name", key.title()),
+        "description": item.get("description", ""),
+        "rarity": item.get("rarity", "common"),
+    }
+
+
 def ensure_equipped_weapon(equipped_key, inventory):
     if equipped_key in inventory:
         return equipped_key
@@ -386,6 +482,7 @@ def derive_character_from_record(record):
     weapon = format_weapon_payload(equipped_key)
     attack_ability = weapon["ability"] or class_data["primary_ability"]
     attack_bonus = ability_mods[attack_ability] + proficiency
+    items = deserialize_items(record.get("item_inventory"))
     return {
         "race": race,
         "char_class": char_class,
@@ -400,6 +497,9 @@ def derive_character_from_record(record):
         "attack_ability": attack_ability,
         "inventory": inventory,
         "equipped_weapon": weapon["key"],
+        "xp": record.get("xp") or 0,
+        "gold": record.get("gold") or 0,
+        "items": items,
     }
 
 
@@ -451,7 +551,10 @@ def init_db():
             current_hp INTEGER,
             level INTEGER,
             equipped_weapon TEXT,
-            weapon_inventory TEXT
+            weapon_inventory TEXT,
+            xp INTEGER DEFAULT 0,
+            gold INTEGER DEFAULT 0,
+            item_inventory TEXT
         );
         """
     )
@@ -475,15 +578,23 @@ def init_db():
         c.execute(f"ALTER TABLE users ADD COLUMN equipped_weapon TEXT DEFAULT '{DEFAULT_WEAPON_KEY}'")
     if not _column_exists(c, "users", "weapon_inventory"):
         c.execute("ALTER TABLE users ADD COLUMN weapon_inventory TEXT")
+    if not _column_exists(c, "users", "xp"):
+        c.execute("ALTER TABLE users ADD COLUMN xp INTEGER DEFAULT 0")
+    if not _column_exists(c, "users", "gold"):
+        c.execute("ALTER TABLE users ADD COLUMN gold INTEGER DEFAULT 0")
+    if not _column_exists(c, "users", "item_inventory"):
+        c.execute("ALTER TABLE users ADD COLUMN item_inventory TEXT")
     c.execute("UPDATE users SET hp = COALESCE(hp, 10)")
     c.execute("UPDATE users SET atk = COALESCE(atk, 2)")
+    c.execute("UPDATE users SET xp = COALESCE(xp, 0)")
+    c.execute("UPDATE users SET gold = COALESCE(gold, 0)")
 
     # Backfill missing character sheets
     c.execute(
         """
         SELECT id, username, race, char_class, hp, current_hp, level,
                str_score, dex_score, con_score, int_score, wis_score, cha_score,
-               equipped_weapon, weapon_inventory
+               equipped_weapon, weapon_inventory, xp, gold, item_inventory
         FROM users
         """
     )
@@ -494,6 +605,7 @@ def init_db():
             or any(row[f"{ability}_score"] is None for ability in ABILITY_KEYS)
         )
         inventory = deserialize_inventory(row["weapon_inventory"])
+        items = deserialize_items(row["item_inventory"])
         char_class = row["char_class"] or DEFAULT_CLASS
         if not inventory:
             inventory = default_inventory_for_class(char_class)
@@ -508,7 +620,8 @@ def init_db():
                 SET race = ?, char_class = ?, level = ?, hp = ?, current_hp = ?,
                     atk = ?, str_score = ?, dex_score = ?, con_score = ?,
                     int_score = ?, wis_score = ?, cha_score = ?,
-                    equipped_weapon = ?, weapon_inventory = ?
+                    equipped_weapon = ?, weapon_inventory = ?,
+                    xp = ?, gold = ?, item_inventory = ?
                 WHERE id = ?
                 """,
                 (
@@ -526,6 +639,9 @@ def init_db():
                     ability_values["cha"],
                     sheet["equipped_weapon"],
                     serialize_inventory(sheet["inventory"]),
+                    row["xp"] if row["xp"] is not None else 0,
+                    row["gold"] if row["gold"] is not None else 0,
+                    serialize_items([]),
                     row["id"],
                 ),
             )
@@ -535,18 +651,23 @@ def init_db():
             c.execute(
                 """
                 UPDATE users
-                SET equipped_weapon = ?, weapon_inventory = ?
+                SET equipped_weapon = ?, weapon_inventory = ?,
+                    xp = COALESCE(xp, 0), gold = COALESCE(gold, 0),
+                    item_inventory = ?
                 WHERE id = ?
                 """,
                 (
                     equipped_weapon,
                     serialize_inventory(inventory),
+                    serialize_items(items),
                     row["id"],
                 ),
             )
 
     conn.commit()
     conn.close()
+    if not mobs:
+        spawn_initial_mobs()
 
 
 def get_user(username):
@@ -572,8 +693,9 @@ def create_user(username, password, race_choice, class_choice):
         INSERT INTO users (
             username, password_hash, race, char_class, level,
             str_score, dex_score, con_score, int_score, wis_score, cha_score,
-            hp, current_hp, atk, equipped_weapon, weapon_inventory
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            hp, current_hp, atk, equipped_weapon, weapon_inventory,
+            xp, gold, item_inventory
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             username,
@@ -592,6 +714,9 @@ def create_user(username, password, race_choice, class_choice):
             sheet["attack_bonus"],
             sheet["equipped_weapon"],
             serialize_inventory(sheet["inventory"]),
+            0,
+            0,
+            serialize_items([]),
         ),
     )
     conn.commit()
@@ -610,6 +735,44 @@ def update_user_equipped_weapon(username, weapon_key):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE users SET equipped_weapon = ? WHERE username = ?", (weapon_key, username))
+    conn.commit()
+    conn.close()
+
+
+def update_user_weapon_inventory(username, inventory):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "UPDATE users SET weapon_inventory = ? WHERE username = ?",
+        (serialize_inventory(inventory), username),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_user_gold(username, gold):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE users SET gold = ? WHERE username = ?", (gold, username))
+    conn.commit()
+    conn.close()
+
+
+def update_user_xp(username, xp):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE users SET xp = ? WHERE username = ?", (xp, username))
+    conn.commit()
+    conn.close()
+
+
+def update_user_items(username, items):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "UPDATE users SET item_inventory = ? WHERE username = ?",
+        (serialize_items(items), username),
+    )
     conn.commit()
     conn.close()
 
@@ -635,6 +798,10 @@ def update_user_equipped_weapon(username, weapon_key):
 #     "equipped_weapon": str,
 # }
 players = {}
+mobs = {}
+room_loot = {}
+_mob_counter = 0
+_loot_counter = 0
 
 
 def room_name(x, y):
@@ -649,6 +816,171 @@ def get_room_info(x, y):
 
 def get_players_in_room(x, y):
     return [u for u, p in players.items() if p["x"] == x and p["y"] == y]
+
+
+def random_world_position(exclude=None):
+    exclude = set(exclude or [])
+    attempts = 0
+    while attempts < 50:
+        x = random.randrange(WORLD_WIDTH)
+        y = random.randrange(WORLD_HEIGHT)
+        if (x, y) not in exclude:
+            return x, y
+        attempts += 1
+    return random.randrange(WORLD_WIDTH), random.randrange(WORLD_HEIGHT)
+
+
+def roll_hit_points_from_notation(notation, fallback):
+    if not notation:
+        return max(1, int(fallback or 1))
+    cleaned = notation.lower().replace(" ", "")
+    if "d" not in cleaned:
+        try:
+            return max(1, int(cleaned))
+        except ValueError:
+            return max(1, int(fallback or 1))
+    num_part, rest = cleaned.split("d", 1)
+    try:
+        count = int(num_part) if num_part else 1
+    except ValueError:
+        count = 1
+    modifier = 0
+    size_part = rest
+    if "+" in rest:
+        size_part, mod_part = rest.split("+", 1)
+        try:
+            modifier = int(mod_part)
+        except ValueError:
+            modifier = 0
+    elif "-" in rest:
+        size_part, mod_part = rest.split("-", 1)
+        try:
+            modifier = -int(mod_part)
+        except ValueError:
+            modifier = 0
+    try:
+        size = int(size_part)
+    except ValueError:
+        size = max(1, int(fallback or 1))
+    total = sum(random.randint(1, max(1, size)) for _ in range(max(1, count))) + modifier
+    return max(1, total)
+
+
+def spawn_mob(template_key, x=None, y=None):
+    template = MOB_TEMPLATES.get(template_key)
+    if not template:
+        return None
+    global _mob_counter
+    if x is None or y is None:
+        x, y = random_world_position(exclude={(START_X, START_Y)})
+    _mob_counter += 1
+    hp = roll_hit_points_from_notation(template.get("hp_dice"), template.get("hp", 1))
+    mob_id = f"{template_key}-{_mob_counter}"
+    mob = {
+        "id": mob_id,
+        "template": template_key,
+        "name": template.get("name", template_key.title()),
+        "x": x,
+        "y": y,
+        "ac": template.get("ac", 10),
+        "hp": hp,
+        "max_hp": hp,
+        "xp": template.get("xp", 0),
+        "description": template.get("description", ""),
+        "abilities": template.get("abilities", {}),
+        "gold_range": template.get("gold_range", (0, 0)),
+        "loot": list(template.get("loot", [])),
+        "contributions": {},
+        "alive": True,
+    }
+    mobs[mob_id] = mob
+    return mob
+
+
+def spawn_initial_mobs():
+    occupied = {(START_X, START_Y)}
+    for key, template in MOB_TEMPLATES.items():
+        count = max(1, int(template.get("initial_spawns", 1)))
+        for _ in range(count):
+            x, y = random_world_position(exclude=occupied)
+            occupied.add((x, y))
+            spawn_mob(key, x, y)
+
+
+def get_mobs_in_room(x, y):
+    return [mob for mob in mobs.values() if mob["alive"] and mob["x"] == x and mob["y"] == y]
+
+
+def format_mob_payload(mob):
+    return {
+        "id": mob["id"],
+        "name": mob["name"],
+        "hp": mob["hp"],
+        "max_hp": mob["max_hp"],
+        "ac": mob["ac"],
+        "xp": mob.get("xp", 0),
+        "description": mob.get("description", ""),
+    }
+
+
+def find_mob_in_room(identifier, x, y):
+    if not identifier:
+        return None
+    lookup = identifier.strip().lower()
+    for mob in get_mobs_in_room(x, y):
+        if mob["id"].lower() == lookup or mob["name"].lower() == lookup:
+            return mob
+    return None
+
+
+def get_loot_in_room(x, y):
+    return list(room_loot.get((x, y), []))
+
+
+def add_loot_to_room(x, y, loot_entry):
+    room_loot.setdefault((x, y), []).append(loot_entry)
+
+
+def generate_loot_entry_gold(amount):
+    global _loot_counter
+    _loot_counter += 1
+    return {
+        "id": f"loot-{_loot_counter}",
+        "type": "gold",
+        "amount": amount,
+        "name": f"{amount} gold coins",
+        "description": "A small pile of coins dropped by a defeated foe.",
+    }
+
+
+def generate_loot_entry_item(item_key):
+    global _loot_counter
+    _loot_counter += 1
+    item = GENERAL_ITEMS.get(item_key) or WEAPONS.get(item_key)
+    name = item.get("name", item_key.title()) if item else item_key.title()
+    description = item.get("description", "") if item else "An unidentified item."
+    return {
+        "id": f"loot-{_loot_counter}",
+        "type": "item",
+        "item_key": item_key,
+        "name": name,
+        "description": description,
+    }
+
+
+def format_loot_payload(entries):
+    payload = []
+    for entry in entries:
+        payload.append(
+            {
+                "id": entry["id"],
+                "type": entry.get("type", "item"),
+                "name": entry.get("name", "Mysterious loot"),
+                "amount": entry.get("amount"),
+                "description": entry.get("description", ""),
+            }
+        )
+    return payload
 
 
 def resolve_spell_key_from_input(player, identifier):
@@ -800,6 +1132,9 @@ def build_player_state(user_record, sid):
     }
     state.update(derived)
     state["inventory"] = list(state.get("inventory", []))
+    state["items"] = list(state.get("items", []))
+    state["gold"] = int(derived.get("gold", 0))
+    state["xp"] = int(derived.get("xp", 0))
     state["hp"] = clamp_hp(user_record.get("current_hp"), derived["max_hp"])
     state["base_ability_mods"] = dict(state.get("ability_mods", {}))
     state["base_ac"] = state.get("ac", 10)
@@ -882,12 +1217,22 @@ def send_room_state(username):
                 "equipped": info["key"] == player.get("equipped_weapon"),
             }
         )
+    item_payload = []
+    for key in player.get("items", []):
+        info = format_item_payload(key)
+        if not info:
+            continue
+        item_payload.append(info)
+    mobs_here = [format_mob_payload(mob) for mob in get_mobs_in_room(x, y)]
+    loot_here = format_loot_payload(get_loot_in_room(x, y))
     payload = {
         "x": x,
         "y": y,
         "room_name": room["name"],
         "description": room["description"],
         "players": occupants,
+        "mobs": mobs_here,
+        "loot": loot_here,
         "character": {
             "race": player["race"],
             "char_class": player["char_class"],
@@ -907,11 +1252,19 @@ def send_room_state(username):
             "abilities": player["abilities"],
             "ability_mods": player["ability_mods"],
             "weapon_inventory": inventory_payload,
+            "items": item_payload,
+            "gold": player.get("gold", 0),
+            "xp": player.get("xp", 0),
             "spells": format_spell_list(player),
             "effects": format_effect_list(player),
         },
     }
     socketio.emit("room_state", payload, to=player["sid"])
+
+
+def broadcast_room_state(x, y):
+    for occupant in get_players_in_room(x, y):
+        send_room_state(occupant)
 
 
 def describe_adjacent_players(player):
@@ -1166,7 +1519,7 @@ def handle_command(username, command_text):
     cmd = parts[0].lower()
     if cmd in ("attack", "fight"):
         if len(parts) < 2:
-            notify_player(username, "Usage: /attack <player_name>")
+            notify_player(username, "Usage: /attack <target>")
             return True
         target_name = parts[1]
         resolve_attack(username, target_name)
@@ -1222,6 +1575,15 @@ def handle_command(username, command_text):
             lines.append(f"- {type_label}{spell['name']}: {spell['description']}{cooldown_text}")
         notify_player(username, "Known spells & abilities:\n" + "\n".join(lines))
         return True
+    if cmd in ("loot", "take", "pickup"):
+        if len(parts) < 2:
+            notify_player(username, "Usage: /loot <loot-id>")
+            return True
+        loot_id = parts[1]
+        success, message = pickup_loot(username, loot_id)
+        if not success and message:
+            notify_player(username, message)
+        return True
 
     notify_player(username, f"Unknown command: {cmd}")
     return True
@@ -1232,6 +1594,194 @@ def attack_roll_success(roll, total_attack, target_ac):
     if roll == 20:
         return True
     return total_attack >= target_ac
+
+
+def distribute_xp(contributions, total_xp):
+    awards = {}
+    if not total_xp or total_xp <= 0:
+        return awards
+    filtered = {player: max(0, int(damage)) for player, damage in contributions.items() if damage > 0}
+    if not filtered:
+        return awards
+    total_damage = sum(filtered.values())
+    if total_damage <= 0:
+        return awards
+    remaining = total_xp
+    ordered = sorted(filtered.items(), key=lambda item: item[1], reverse=True)
+    for username, damage in ordered:
+        share = int(total_xp * damage / total_damage)
+        if share > remaining:
+            share = remaining
+        awards[username] = share
+        remaining -= share
+    idx = 0
+    while remaining > 0 and ordered:
+        username = ordered[idx % len(ordered)][0]
+        awards[username] = awards.get(username, 0) + 1
+        remaining -= 1
+        idx += 1
+    return {user: amount for user, amount in awards.items() if amount > 0}
+
+
+def award_xp(username, amount):
+    if not amount or amount <= 0:
+        return
+    player = players.get(username)
+    if player:
+        player["xp"] = player.get("xp", 0) + amount
+        update_user_xp(username, player["xp"])
+        notify_player(username, f"You gain {amount} XP.")
+    else:
+        record = get_user(username)
+        if record is None:
+            return
+        new_total = (record.get("xp") or 0) + amount
+        update_user_xp(username, new_total)
+
+
+def handle_mob_defeat(mob, killer_name=None):
+    if not mob or not mob.get("alive"):
+        return
+    mob["alive"] = False
+    x, y = mob["x"], mob["y"]
+    room = room_name(x, y)
+    socketio.emit(
+        "system_message",
+        {"text": f"{mob['name']} is slain!"},
+        room=room,
+    )
+    contributions = mob.get("contributions", {})
+    xp_total = mob.get("xp", 0)
+    awards = distribute_xp(contributions, xp_total)
+    if awards:
+        for username, amount in awards.items():
+            award_xp(username, amount)
+    gold_min, gold_max = mob.get("gold_range", (0, 0))
+    drops = []
+    if gold_max and gold_max >= gold_min and gold_max > 0:
+        gold_amount = random.randint(gold_min, gold_max)
+        if gold_amount > 0:
+            gold_entry = generate_loot_entry_gold(gold_amount)
+            add_loot_to_room(x, y, gold_entry)
+            drops.append(gold_entry)
+    for entry in mob.get("loot", []):
+        if isinstance(entry, (list, tuple)) and entry:
+            item_key = entry[0]
+            chance = entry[1] if len(entry) > 1 else 1.0
+        else:
+            item_key = entry
+            chance = 1.0
+        if random.random() <= chance:
+            loot_entry = generate_loot_entry_item(item_key)
+            add_loot_to_room(x, y, loot_entry)
+            drops.append(loot_entry)
+    if drops:
+        names = ", ".join(drop["name"] for drop in drops)
+        socketio.emit(
+            "system_message",
+            {"text": f"Treasure spills onto the ground: {names}."},
+            room=room,
+        )
+    mobs.pop(mob["id"], None)
+    broadcast_room_state(x, y)
+
+
+def resolve_attack_against_mob(attacker_name, attacker, mob):
+    recalculate_player_stats(attacker)
+    roll = random.randint(1, 20)
+    crit = roll == 20
+    attack_bonus = attacker["attack_bonus"]
+    bonus_rolls = []
+    bonus_total = 0
+    for bonus in attacker.get("attack_roll_bonus_dice", []):
+        extra = roll_dice(bonus.get("dice"))
+        bonus_total += extra
+        label = bonus.get("label") or format_dice(bonus.get("dice"))
+        bonus_rolls.append((label, extra))
+    total_attack = roll + attack_bonus + bonus_total
+    room = room_name(attacker["x"], attacker["y"])
+    if not attack_roll_success(roll, total_attack, mob["ac"]):
+        bonus_text = "".join(f" + {label} {value}" for label, value in bonus_rolls)
+        socketio.emit(
+            "system_message",
+            {
+                "text": f"{attacker_name} strikes at {mob['name']} but misses (roll {roll} + {attack_bonus}{bonus_text} = {total_attack} vs AC {mob['ac']}).",
+            },
+            room=room,
+        )
+        return
+    ability_key = attacker.get("attack_ability", "str")
+    ability_mod = attacker["ability_mods"].get(ability_key, 0)
+    damage = roll_weapon_damage(
+        attacker["weapon"], ability_mod, crit=crit, bonus_damage=attacker.get("damage_bonus", 0)
+    )
+    mob["hp"] = max(0, mob["hp"] - damage)
+    contributions = mob.setdefault("contributions", {})
+    contributions[attacker_name] = contributions.get(attacker_name, 0) + damage
+    bonus_text = "".join(f" + {label} {value}" for label, value in bonus_rolls)
+    attack_detail = f"roll {roll}{' - critical!' if crit else ''} + {attack_bonus}{bonus_text} = {total_attack}"
+    socketio.emit(
+        "system_message",
+        {
+            "text": f"{attacker_name} hits {mob['name']} with {attacker['weapon']['name']} for {damage} damage ({attack_detail}, AC {mob['ac']}).",
+        },
+        room=room,
+    )
+    if mob["hp"] <= 0:
+        handle_mob_defeat(mob, killer_name=attacker_name)
+    else:
+        broadcast_room_state(attacker["x"], attacker["y"])
+
+
+def pickup_loot(username, loot_identifier):
+    player = players.get(username)
+    if not player:
+        return False, "You are not in the game."
+    if not loot_identifier:
+        return False, "Specify which loot to take."
+    loot_identifier = loot_identifier.strip().lower()
+    x, y = player["x"], player["y"]
+    entries = room_loot.get((x, y), [])
+    match = None
+    for entry in entries:
+        if entry["id"].lower() == loot_identifier:
+            match = entry
+            break
+    if not match:
+        return False, "No such loot lies here."
+    room_loot[(x, y)].remove(match)
+    if not room_loot[(x, y)]:
+        room_loot.pop((x, y), None)
+    room = room_name(x, y)
+    if match.get("type") == "gold":
+        amount = int(match.get("amount") or 0)
+        player["gold"] = player.get("gold", 0) + amount
+        update_user_gold(username, player["gold"])
+        message = f"{username} scoops up {amount} gold coins."
+    else:
+        item_key = match.get("item_key")
+        if item_key in GENERAL_ITEMS:
+            items = player.setdefault("items", [])
+            items.append(item_key)
+            update_user_items(username, items)
+            item_name = GENERAL_ITEMS[item_key]["name"]
+            message = f"{username} picks up {item_name}."
+        elif item_key in WEAPONS:
+            inventory = player.setdefault("inventory", [])
+            if item_key not in inventory:
+                inventory.append(item_key)
+                update_user_weapon_inventory(username, inventory)
+            item_name = WEAPONS[item_key]["name"]
+            message = f"{username} claims {item_name}."
+        else:
+            items = player.setdefault("items", [])
+            items.append(item_key)
+            update_user_items(username, items)
+            item_name = match.get("name", "an item")
+            message = f"{username} picks up {item_name}."
+    socketio.emit("system_message", {"text": message}, room=room)
+    broadcast_room_state(x, y)
+    return True, message
 
 
 def resolve_attack(attacker_name, target_name):
@@ -1249,6 +1799,10 @@ def resolve_attack(attacker_name, target_name):
 
     target = players.get(target_name)
     if not target:
+        mob = find_mob_in_room(target_name, attacker["x"], attacker["y"])
+        if mob:
+            resolve_attack_against_mob(attacker_name, attacker, mob)
+            return
         notify_player(attacker_name, f"{target_name} is nowhere to be found.")
         return
 
@@ -1503,6 +2057,18 @@ def on_cast_spell(data):
         notify_player(username, message)
 
 
+@socketio.on("pickup_loot")
+def on_pickup_loot(data):
+    username = session.get("username")
+    if not username or username not in players:
+        return
+    payload = data or {}
+    loot_id = payload.get("loot_id") or payload.get("id") or payload.get("loot")
+    success, message = pickup_loot(username, loot_id)
+    if not success and message:
+        notify_player(username, message)
+
+
 @socketio.on("chat")
 def on_chat(data):
     username = session.get("username")
@@ -1541,6 +2107,10 @@ def on_disconnect():
         update_user_current_hp(username, players[username]["hp"])
         # Remove from players (MVP: no persistent positions)
         players.pop(username, None)
+
+
+if not mobs:
+    spawn_initial_mobs()
 
 
 if __name__ == "__main__":
