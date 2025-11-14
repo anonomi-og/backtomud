@@ -19,6 +19,14 @@ const weaponSelect = document.getElementById("weapon-select");
 const weaponListEl = document.getElementById("weapon-list");
 const equipForm = document.getElementById("equip-form");
 const equipButton = equipForm ? equipForm.querySelector("button") : null;
+const spellSelect = document.getElementById("spell-select");
+const spellListEl = document.getElementById("spell-list");
+const spellTargetInput = document.getElementById("spell-target");
+const castForm = document.getElementById("cast-form");
+const castButton = castForm ? castForm.querySelector("button") : null;
+const effectsListEl = document.getElementById("effects-list");
+
+let lastSpellList = [];
 
 const ABILITY_ORDER = ["str", "dex", "con", "int", "wis", "cha"];
 const ABILITY_LABELS = {
@@ -117,7 +125,7 @@ function renderCharacterPanel(character) {
   if (profEl && typeof character.proficiency !== "undefined") {
     profEl.textContent = formatBonus(character.proficiency);
   }
-if (weaponEl && character.weapon) {
+  if (weaponEl && character.weapon) {
     const weapon = character.weapon;
     const damageType = weapon.damage_type ? ` ${weapon.damage_type}` : "";
     weaponEl.textContent = `${weapon.name} (${weapon.dice}${damageType})`;
@@ -128,6 +136,8 @@ if (weaponEl && character.weapon) {
   }
   renderAbilityTable(character.abilities, character.ability_mods);
   renderWeaponPanel(character.weapon_inventory || [], character.weapon);
+  renderSpellPanel(character.spells || []);
+  renderEffectsPanel(character.effects || []);
 }
 
 function renderAbilityTable(scores = {}, modifiers = {}) {
@@ -199,10 +209,176 @@ function formatWeaponLabel(weapon) {
   return `${weapon.name} (${damage}${type})${suffix}`;
 }
 
+function renderSpellPanel(spellList = []) {
+  if (!spellSelect || !spellListEl) return;
+  const previousValue = spellSelect.value;
+  lastSpellList = Array.isArray(spellList) ? [...spellList] : [];
+  spellSelect.innerHTML = "";
+  spellListEl.innerHTML = "";
+
+  if (!spellList.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No spells or abilities";
+    spellSelect.appendChild(option);
+    spellSelect.disabled = true;
+    if (castButton) castButton.disabled = true;
+    if (spellTargetInput) {
+      spellTargetInput.value = "";
+      spellTargetInput.placeholder = "Target (optional)";
+      spellTargetInput.disabled = true;
+    }
+    return;
+  }
+
+  spellSelect.disabled = false;
+  let selectedValue = null;
+  const readySpell = spellList.find((spell) => spell.key === previousValue && !spell.cooldown_remaining);
+  if (readySpell) {
+    selectedValue = readySpell.key;
+  }
+
+  spellList.forEach((spell) => {
+    const option = document.createElement("option");
+    option.value = spell.key;
+    option.textContent = formatSpellOption(spell);
+    if (spell.cooldown_remaining) {
+      option.disabled = true;
+    }
+    spellSelect.appendChild(option);
+
+    const li = document.createElement("li");
+    li.textContent = formatSpellListEntry(spell);
+    if (spell.cooldown_remaining) {
+      li.classList.add("on-cooldown");
+    }
+    spellListEl.appendChild(li);
+  });
+
+  if (!selectedValue) {
+    const firstAvailable = spellList.find((spell) => !spell.cooldown_remaining);
+    if (firstAvailable) {
+      selectedValue = firstAvailable.key;
+    } else {
+      selectedValue = spellList[0].key;
+    }
+  }
+
+  if (selectedValue) {
+    spellSelect.value = selectedValue;
+  }
+
+  const canCast = spellList.some((spell) => !spell.cooldown_remaining);
+  if (castButton) castButton.disabled = !canCast;
+  if (spellTargetInput) {
+    spellTargetInput.disabled = false;
+  }
+  updateSpellTargetField(lastSpellList, spellSelect.value);
+}
+
+function formatSpellOption(spell) {
+  if (!spell) return "--";
+  const typeLabel = spell.type || "Ability";
+  if (spell.cooldown_remaining) {
+    return `${spell.name} (${typeLabel}, ${spell.cooldown_remaining}s)`;
+  }
+  return `${spell.name} (${typeLabel} ready)`;
+}
+
+function formatSpellListEntry(spell) {
+  if (!spell) return "--";
+  const typeLabel = spell.type ? `${spell.type}: ` : "";
+  const description = spell.description || "";
+  let cooldownText = "";
+  if (spell.cooldown_remaining) {
+    cooldownText = ` (recharges in ${spell.cooldown_remaining}s)`;
+  } else if (spell.cooldown) {
+    cooldownText = ` (${spell.cooldown}s cooldown)`;
+  }
+  return `${spell.name} — ${typeLabel}${description}${cooldownText}`;
+}
+
+function updateSpellTargetField(spellList, selectedKey) {
+  if (!spellTargetInput) return;
+  const spell = (spellList || []).find((item) => item.key === selectedKey);
+  if (!spell) {
+    spellTargetInput.placeholder = "Target (optional)";
+    spellTargetInput.disabled = !spellList || !spellList.length;
+    if (spellTargetInput.disabled) {
+      spellTargetInput.value = "";
+    }
+    return;
+  }
+
+  const targetType = spell.target || "any";
+  if (targetType === "self" || targetType === "none") {
+    spellTargetInput.value = "";
+    spellTargetInput.placeholder = "No target needed";
+    spellTargetInput.disabled = true;
+  } else if (targetType === "enemy") {
+    spellTargetInput.disabled = false;
+    spellTargetInput.placeholder = "Target name required";
+  } else {
+    spellTargetInput.disabled = false;
+    spellTargetInput.placeholder = "Target (optional)";
+  }
+}
+
+function renderEffectsPanel(effects = []) {
+  if (!effectsListEl) return;
+  effectsListEl.innerHTML = "";
+  if (!effects.length) {
+    const li = document.createElement("li");
+    li.textContent = "None";
+    effectsListEl.appendChild(li);
+    return;
+  }
+  effects.forEach((effect) => {
+    const li = document.createElement("li");
+    const name = effect.name || "Unnamed effect";
+    const description = effect.description ? ` — ${effect.description}` : "";
+    const timer =
+      typeof effect.expires_in === "number" && effect.expires_in > 0
+        ? ` (${effect.expires_in}s)`
+        : "";
+    li.textContent = `${name}${description}${timer}`;
+    effectsListEl.appendChild(li);
+  });
+}
+
 if (equipForm) {
   equipForm.addEventListener("submit", (evt) => {
     evt.preventDefault();
     if (!weaponSelect || !weaponSelect.value) return;
     socket.emit("equip_weapon", { weapon: weaponSelect.value });
+  });
+}
+
+if (castForm) {
+  castForm.addEventListener("submit", (evt) => {
+    evt.preventDefault();
+    if (!spellSelect || !spellSelect.value) return;
+    const selectedOption = spellSelect.options[spellSelect.selectedIndex];
+    if (selectedOption && selectedOption.disabled) {
+      return;
+    }
+    if (castButton && castButton.disabled) {
+      return;
+    }
+    const targetValue = spellTargetInput && !spellTargetInput.disabled ? spellTargetInput.value.trim() : "";
+    const payload = { spell: spellSelect.value };
+    if (targetValue) {
+      payload.target = targetValue;
+    }
+    socket.emit("cast_spell", payload);
+    if (spellTargetInput && !spellTargetInput.disabled) {
+      spellTargetInput.value = "";
+    }
+  });
+}
+
+if (spellSelect) {
+  spellSelect.addEventListener("change", () => {
+    updateSpellTargetField(lastSpellList, spellSelect.value);
   });
 }
