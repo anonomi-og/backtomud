@@ -4,6 +4,8 @@ const roomNameEl = document.getElementById("room-name");
 const roomDescEl = document.getElementById("room-desc");
 const coordsEl = document.getElementById("coords");
 const playersListEl = document.getElementById("players-list");
+const mobListEl = document.getElementById("mob-list");
+const lootListEl = document.getElementById("loot-list");
 const messagesEl = document.getElementById("messages");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
@@ -13,6 +15,8 @@ const attackBonusEl = document.getElementById("stat-atk");
 const acEl = document.getElementById("stat-ac");
 const profEl = document.getElementById("stat-prof");
 const weaponEl = document.getElementById("stat-weapon");
+const goldEl = document.getElementById("stat-gold");
+const xpEl = document.getElementById("stat-xp");
 const charSummaryEl = document.getElementById("char-summary");
 const abilityTableBody = document.getElementById("ability-table-body");
 const weaponSelect = document.getElementById("weapon-select");
@@ -25,6 +29,7 @@ const spellTargetInput = document.getElementById("spell-target");
 const castForm = document.getElementById("cast-form");
 const castButton = castForm ? castForm.querySelector("button") : null;
 const effectsListEl = document.getElementById("effects-list");
+const itemListEl = document.getElementById("item-list");
 
 let lastSpellList = [];
 
@@ -74,6 +79,8 @@ socket.on("room_state", (data) => {
   if (data.character) {
     renderCharacterPanel(data.character);
   }
+  renderMobList(data.mobs || []);
+  renderLootList(data.loot || []);
 });
 
 socket.on("system_message", (data) => {
@@ -130,6 +137,12 @@ function renderCharacterPanel(character) {
     const damageType = weapon.damage_type ? ` ${weapon.damage_type}` : "";
     weaponEl.textContent = `${weapon.name} (${weapon.dice}${damageType})`;
   }
+  if (goldEl && typeof character.gold !== "undefined") {
+    goldEl.textContent = character.gold;
+  }
+  if (xpEl && typeof character.xp !== "undefined") {
+    xpEl.textContent = character.xp;
+  }
   if (attackBonusEl && typeof character.attack_bonus !== "undefined") {
     const abilityTag = character.attack_ability ? character.attack_ability.toUpperCase() : "";
     attackBonusEl.textContent = `${formatBonus(character.attack_bonus)}${abilityTag ? ` via ${abilityTag}` : ""}`;
@@ -138,6 +151,7 @@ function renderCharacterPanel(character) {
   renderWeaponPanel(character.weapon_inventory || [], character.weapon);
   renderSpellPanel(character.spells || []);
   renderEffectsPanel(character.effects || []);
+  renderItemPanel(character.items || []);
 }
 
 function renderAbilityTable(scores = {}, modifiers = {}) {
@@ -343,6 +357,76 @@ function renderEffectsPanel(effects = []) {
         : "";
     li.textContent = `${name}${description}${timer}`;
     effectsListEl.appendChild(li);
+  });
+}
+
+function renderItemPanel(items = []) {
+  if (!itemListEl) return;
+  itemListEl.innerHTML = "";
+  if (!items.length) {
+    const li = document.createElement("li");
+    li.textContent = "No notable gear.";
+    itemListEl.appendChild(li);
+    return;
+  }
+  items.forEach((item) => {
+    const li = document.createElement("li");
+    const name = item.name || "Unknown item";
+    const rarity = item.rarity ? ` [${item.rarity}]` : "";
+    const description = item.description ? ` — ${item.description}` : "";
+    li.textContent = `${name}${rarity}${description}`;
+    itemListEl.appendChild(li);
+  });
+}
+
+function renderMobList(mobs = []) {
+  if (!mobListEl) return;
+  mobListEl.innerHTML = "";
+  if (!mobs.length) {
+    const li = document.createElement("li");
+    li.textContent = "No hostile presences.";
+    mobListEl.appendChild(li);
+    return;
+  }
+  mobs.forEach((mob) => {
+    const li = document.createElement("li");
+    const label = document.createElement("span");
+    label.textContent = `${mob.name} (${mob.hp}/${mob.max_hp} HP, AC ${mob.ac})`;
+    li.appendChild(label);
+    const attackButton = document.createElement("button");
+    attackButton.textContent = "Attack";
+    attackButton.addEventListener("click", () => {
+      socket.emit("chat", { text: `/attack ${mob.id}` });
+    });
+    li.appendChild(attackButton);
+    mobListEl.appendChild(li);
+  });
+}
+
+function renderLootList(loot = []) {
+  if (!lootListEl) return;
+  lootListEl.innerHTML = "";
+  if (!loot.length) {
+    const li = document.createElement("li");
+    li.textContent = "Nothing of value lies here.";
+    lootListEl.appendChild(li);
+    return;
+  }
+  loot.forEach((entry) => {
+    const li = document.createElement("li");
+    const name = entry.name || "Unmarked loot";
+    const desc = entry.description ? ` — ${entry.description}` : "";
+    const amount = entry.type === "gold" && entry.amount ? ` (${entry.amount} gold)` : "";
+    const label = document.createElement("span");
+    label.textContent = `${entry.id}: ${name}${amount}${desc}`;
+    li.appendChild(label);
+    const takeButton = document.createElement("button");
+    takeButton.textContent = "Take";
+    takeButton.addEventListener("click", () => {
+      socket.emit("pickup_loot", { loot_id: entry.id });
+    });
+    li.appendChild(takeButton);
+    lootListEl.appendChild(li);
   });
 }
 

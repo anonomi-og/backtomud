@@ -55,6 +55,36 @@ header {
   font-weight: bold;
 }
 
+#mob-list,
+#loot-list {
+  list-style: none;
+  padding-left: 1rem;
+  margin: 0 0 0.5rem 0;
+}
+
+#mob-list li,
+#loot-list li {
+  margin-bottom: 0.3rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+#mob-list button,
+#loot-list button {
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background: #333;
+  color: #eee;
+  cursor: pointer;
+}
+
+#mob-list button:hover,
+#loot-list button:hover {
+  background: #444;
+}
+
 .movement button {
   margin: 4px;
   padding: 0.4rem 0.8rem;
@@ -132,7 +162,8 @@ header {
 }
 
 .spell-panel,
-.effects-panel {
+.effects-panel,
+.item-panel {
   margin-top: 0.6rem;
   padding-top: 0.4rem;
   border-top: 1px solid #333;
@@ -191,6 +222,17 @@ header {
 }
 
 .effects-panel li {
+  margin-bottom: 0.2rem;
+}
+
+.item-panel ul {
+  list-style: none;
+  padding-left: 1rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.item-panel li {
   margin-bottom: 0.2rem;
 }
 
