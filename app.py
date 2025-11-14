@@ -28,67 +28,67 @@ VILLAGE_MAP = [
     [
         {
             "name": "Northern Gate",
-            "description": "Timber palisades creak while a sentry nods as you pass beneath the gate arch.",
+            "description": "Timber palisades creak while a sentry nods beneath the gate arch. Beyond the arch the trade road stretches north into the frontier, while the village lane bends east toward Merchant Row and south toward the Thatched Cottages; the palisade crowds close along the western wall.",
         },
         {
             "name": "Merchant Row",
-            "description": "Stalls line the street with bolts of cloth and fresh produce neatly displayed.",
+            "description": "Stalls line the street with bolts of cloth and fresh produce neatly displayed. A narrow cart track returns west to the Northern Gate, the shrine's stone steps rise to the east, and a footpath drops south into the Herbalist Garden; the palisade seals away any path to the north.",
         },
         {
             "name": "Shrine Steps",
-            "description": "Stone steps lead to a modest shrine where votive candles gutter in the breeze.",
+            "description": "Stone steps lead to a modest shrine where votive candles gutter in the breeze. The plaza spills west onto Merchant Row, a shadowed watchtower yard waits to the east, and the main thoroughfare continues south toward the Town Hall; the cliff of the palisade blocks any climb northward.",
         },
         {
             "name": "Watchtower Shadow",
-            "description": "The shadow of the wooden watchtower stretches across crates of supplies.",
+            "description": "The shadow of the wooden watchtower stretches across crates of supplies. Patrol stairs descend west toward the shrine, a service lane leads east toward the crumbling wall, and a ramp descends south into the Storage Barn's yard; the timber barricade hugs the northern edge.",
         },
         {
             "name": "Crumbling Wall",
-            "description": "Weathered masonry from an older fortification lies half-buried in the sod.",
+            "description": "Weathered masonry from an older fortification lies half-buried in the sod. The watchtower yard lies to the west and the wagon yard spreads to the south, while shattered stone and the outer ditch block passage further north or east.",
         },
     ],
     [
         {
             "name": "Thatched Cottages",
-            "description": "Smoke from cookfires drifts lazily above tidy thatched cottages.",
+            "description": "Smoke from cookfires drifts lazily above tidy thatched cottages. A muddy lane heads north to the Northern Gate, the herb garden blooms eastward, and baker's apprentices dash south down Baker's Lane; pastures hem in the cottages to the west.",
         },
         {
             "name": "Herbalist Garden",
-            "description": "Raised beds of fragrant herbs attract bees and the occasional wandering villager.",
+            "description": "Raised beds of fragrant herbs attract bees and the occasional wandering villager. Wicker gates swing west toward the thatched cottages, the Town Hall stands east beyond tidy hedges, merchant stalls bustle to the south, and the market road climbs north toward Merchant Row.",
         },
         {
             "name": "Town Hall",
-            "description": "The timbered town hall smells of parchment, and a reinforced service door leads east into the storage barn.",
+            "description": "The timbered town hall smells of parchment and warm lamp oil. Stone steps climb north toward the shrine, civic notices point south toward the Village Square, and the public lane angles west into the Herbalist Garden. A thick oak service door with iron bands stands in the east wall, linking the hall to the Storage Barn beyond.",
         },
         {
             "name": "Storage Barn",
-            "description": "Barrels of grain and bundled hay crowd the floor while the westward service door connects back to the hall.",
+            "description": "Barrels of grain and bundled hay crowd the floor and loft. The watchtower yard opens northward, the wagon yard sprawls to the east, and a work path slopes south toward the Blacksmith Forge. A sturdy service door in the west wall leads back into the Town Hall, its hinges groaning when opened.",
         },
         {
             "name": "Wagon Yard",
-            "description": "Wooden wagons await repair beside piles of seasoned lumber.",
+            "description": "Wooden wagons await repair beside piles of seasoned lumber. The crumbling wall looms to the north, the mine entrance waits to the south, and teamsters can retreat west into the Storage Barn while the outer bank blocks travel further east.",
         },
     ],
     [
         {
             "name": "Baker's Lane",
-            "description": "Warm smells of bread drift from an open oven while apprentices hurry by.",
+            "description": "Warm smells of bread drift from an open oven while apprentices hurry by. The cottage lane climbs north toward the homesteads, market stalls bustle to the east, and the forest path winds south beneath the trees; stacked wood piles close off the western fence.",
         },
         {
             "name": "Market Stalls",
-            "description": "Vendors haggle over coppers as curious travelers browse their wares.",
+            "description": "Vendors haggle over coppers as curious travelers browse their wares. Merchant Row beckons north, the Village Square thrums to the east, the Ancient Well lies down a shaded path to the south, and Baker's Lane curls back to the west.",
         },
         {
             "name": "Village Square",
-            "description": "A cobbled square with a communal well and notice board.",
+            "description": "A cobbled square with a communal well and a notice board layered with fresh ink. The Town Hall towers to the north, the forge blazes to the east, Lakeside Dock extends south, and market stalls throng to the west.",
         },
         {
             "name": "Blacksmith Forge",
-            "description": "Sparks fly from the anvil as the smith hammers glowing iron.",
+            "description": "Sparks fly from the anvil as the smith hammers glowing iron. The Storage Barn offers supplies to the north, the Old Mine Entrance yawns to the east, Fisher's Hut nestles south along the water, and the Village Square rests to the west.",
         },
         {
             "name": "Old Mine Entrance",
-            "description": "Timber supports frame the Old Mine entrance where a rune-cut warp stone hums beside the cart tracks.",
+            "description": "Timber supports frame the old mine entrance where a rune-cut warp stone hums beside the cart tracks. Wagon ruts return north to the yard, the lakefront trail bends south toward an abandoned shed, and the forge's sparks dance to the west while sheer rock prevents travel further east.",
             "warp_description": "A waist-high warp stone thrums with stored power, waiting for a willing traveler.",
             "travel_to": {"zone": "dungeon_1", "start": DUNGEON_1_START},
         },
@@ -96,11 +96,11 @@ VILLAGE_MAP = [
     [
         {
             "name": "Forest Path",
-            "description": "A narrow track winds toward the dark pines east of the village.",
+            "description": "A narrow track winds beneath dark pines east of the village. Baker's Lane lies to the north, the Ancient Well waits to the east, the South Field stretches southward, and the treeline thickens impassably to the west.",
         },
         {
             "name": "Ancient Well",
-            "description": "An ivy-wrapped stone well whispers with echoes from below.",
+            "description": "An ivy-wrapped stone well whispers with echoes from below. Market Stalls bustle to the north, Lakeside Dock creaks to the east, the Hayloft ladder rises to the south, and the forest path circles back west.",
             "search": {
                 "dc": 11,
                 "ability": "wis",
@@ -111,54 +111,57 @@ VILLAGE_MAP = [
         },
         {
             "name": "Lakeside Dock",
-            "description": "Wooden planks creak as small fishing boats bob against the pilings.",
+            "description": "Wooden planks creak as small fishing boats bob against the pilings. The Village Square bustles to the north, Fisher's Hut leans east along the shore, the Sunken Stair descends southward, and the well path loops back west.",
         },
         {
             "name": "Fisher's Hut",
-            "description": "Nets dry on racks beside a cottage that smells strongly of smoked trout.",
+            "description": "Nets dry on racks beside a cottage that smells strongly of smoked trout. The forge blazes to the north, the abandoned shed lists to the east, Miller's Bridge crosses the millrace to the south, and Lakeside Dock lies to the west.",
         },
         {
             "name": "Abandoned Shed",
-            "description": "Broken tools litter a leaning shed reclaimed by moss.",
+            "description": "Broken tools litter a leaning shed reclaimed by moss. The mine tracks return north, Riverside Grove murmurs to the south, and Fisher's Hut stands to the west while thick bramble chokes the eastern approach.",
         },
     ],
     [
         {
             "name": "South Field",
-            "description": "Rows of freshly turned soil promise a hearty autumn harvest.",
+            "description": "Rows of freshly turned soil promise a hearty autumn harvest. The forest path returns north, the Hayloft beckons east beside the barn, and hedgerows fence off the farmland to the south and west.",
         },
         {
             "name": "Hayloft",
-            "description": "Stacks of hay tower above the barn floor, a favorite hideout for village children.",
+            "description": "Stacks of hay tower above the barn floor, a favorite hideout for village children. The Ancient Well rests to the north, the Sunken Stair descends east toward the cellar, and the South Field lies to the west while corrals close the way south.",
         },
         {
             "name": "Sunken Stair",
-            "description": "Stone steps descend into a cellar where a crystal-veined warp stone casts steady, cold light.",
+            "description": "Stone steps descend into a cellar where a crystal-veined warp stone casts steady, cold light. Lakeside Dock rests to the north, Miller's Bridge arches east, the Hayloft is tucked to the west, and packed earth walls bar any southern exit.",
             "warp_description": "An embedded warp stone glows between the lowest steps, promising passage for those who touch it.",
             "travel_to": {"zone": "dungeon_2", "start": DUNGEON_2_START},
         },
         {
             "name": "Miller's Bridge",
-            "description": "A wooden bridge spans the millrace, slick with fine spray.",
+            "description": "A wooden bridge spans the millrace, slick with fine spray. Fisher's Hut perches to the north, Riverside Grove rustles to the east, and the Sunken Stair is only a few steps west while foaming water bars travel south.",
         },
         {
             "name": "Riverside Grove",
-            "description": "Tall willows shade a quiet bend in the river where frogs croak at dusk.",
+            "description": "Tall willows shade a quiet bend in the river where frogs croak at dusk. The abandoned shed leans to the north, Miller's Bridge sits to the west, and the deep river curls around to block any southern or eastern approach.",
         },
     ],
 ]
 
 DUNGEON_1_MAP = [
     [
-        {"name": "Sealed Tunnel", "description": "Rockfalls here leave only a narrow crawlspace."},
+        {
+            "name": "Sealed Tunnel",
+            "description": "Rockfalls here leave only a narrow crawlspace. A jagged crawl squeezes east toward the Dusty Landing and a cracked slope drops south into the Twisting Hall, while collapsed stone seals the way north and west.",
+        },
         {
             "name": "Dusty Landing",
-            "description": "Loose gravel litters the floor where miners once gathered.",
+            "description": "Loose gravel litters the floor where miners once gathered. The crawlspace leads back west to the Sealed Tunnel, stalagmites knife up to the east, and a greasy ramp slides south toward the Rat Warren; the ceiling presses too low to continue north.",
             "mobs": ["giant_rat"],
         },
         {
             "name": "Stalagmite Cluster",
-            "description": "Jagged pillars create cramped lanes through the cavern.",
+            "description": "Jagged pillars create cramped lanes through the cavern. Lantern light glimmers on the Collapsed Entrance to the east, the Dusty Landing lies to the west, and a damp pit yawns south toward the Sunken Den; fallen spires choke off the northern crawl.",
             "search": {
                 "dc": 12,
                 "ability": "int",
@@ -169,83 +172,83 @@ DUNGEON_1_MAP = [
         },
         {
             "name": "Collapsed Entrance",
-            "description": "Splintered beams circle a collapsed shaft where a cracked warp stone glows amid the rubble.",
+            "description": "Splintered beams circle a collapsed shaft where a cracked warp stone glows amid the rubble. The rubble slope leads west toward the stalagmite cluster, a narrow chute dives east, and the Broken Cart chamber lies directly south. The warp stone hums with power for those returning to the village above.",
             "warp_description": "A chipped warp stone flickers here, still strong enough to return travelers to the village.",
             "travel_to": {"zone": "village", "start": VILLAGE_START},
         },
         {
             "name": "Rubble Chute",
-            "description": "Fresh stones tumble occasionally from the sloped ceiling.",
+            "description": "Fresh stones tumble occasionally from the sloped ceiling. The Collapsed Entrance rests to the west, the Echoing Gallery opens eastward, and pungent fungal growth spreads south into the grotto while unstable debris blocks any path north.",
         },
         {
             "name": "Echoing Gallery",
-            "description": "Footsteps clap back in a chorus of hollow echoes.",
+            "description": "Footsteps clap back in a chorus of hollow echoes. The rubble chute narrows to the west, the Dripping Alcove glistens to the east, and a cold underground brook courses south; the ceiling squeezes low to the north.",
         },
         {
             "name": "Dripping Alcove",
-            "description": "Mineral-heavy droplets patter into a shallow basin.",
+            "description": "Mineral-heavy droplets patter into a shallow basin. Echoing passages return west, slick stairs spiral south toward the lower levels, and the alcove dead-ends against sheer rock to the east and north.",
         },
     ],
     [
         {
             "name": "Twisting Hall",
-            "description": "Passages coil like a knot, worn smooth by decades of traffic.",
+            "description": "Passages coil like a knot, worn smooth by decades of traffic. The Sealed Tunnel lies to the north, vermin tunnels wriggle east toward the Rat Warren, and a rubble slide drops south into a collapsed shaft while the western wall remains sealed.",
             "mobs": ["giant_rat"],
         },
         {
             "name": "Rat Warren",
-            "description": "Nests of frayed rope and cloth rustle with vermin.",
+            "description": "Nests of frayed rope and cloth rustle with vermin. The Dusty Landing opens to the north, the Sunken Den reeks to the east, and a whispering junction lies south; gnawed stone limits movement back west to the twisting hall.",
             "mobs": ["giant_rat", "giant_rat"],
         },
         {
             "name": "Sunken Den",
-            "description": "Moisture collects in a low pit surrounded by gnawed bones.",
+            "description": "Moisture collects in a low pit surrounded by gnawed bones. The stalagmite cluster looms to the north, a broken ore cart lies to the east, goblin sentries muster to the south, and the rat warrens open to the west.",
         },
         {
             "name": "Broken Cart",
-            "description": "A splintered ore cart lies on its side, spilling rusted tools.",
+            "description": "A splintered ore cart lies on its side, spilling rusted tools. The collapsed entrance glows to the north, fungal terraces shimmer to the east, goblin fields extend south, and the sunken den rests to the west.",
         },
         {
             "name": "Fungus Grotto",
-            "description": "Bioluminescent caps cast a ghostly glow over the cavern.",
+            "description": "Bioluminescent caps cast a ghostly glow over the cavern. The rubble chute feeds spores from the north, an underground brook courses east, a guard post waits to the south, and the broken cart chamber lies to the west.",
             "mobs": ["giant_rat"],
         },
         {
             "name": "Underground Brook",
-            "description": "An icy stream carves a shallow trench through the stone.",
+            "description": "An icy stream carves a shallow trench through the stone. Echoes tumble from the gallery to the north, slick steps descend east, abandoned barracks huddle to the south, and the fungus grotto glows to the west.",
         },
         {
             "name": "Slick Steps",
-            "description": "A carved stairway descends deeper, slick with condensation.",
+            "description": "A carved stairway descends deeper, slick with condensation. The dripping alcove is just north, the underground brook winds to the west, and a shimmering pool lies directly south while crumbling rock blocks any path eastward.",
         },
     ],
     [
         {
             "name": "Collapsed Shaft",
-            "description": "The remnants of a vertical shaft are choked with rubble.",
+            "description": "The remnants of a vertical shaft are choked with rubble. Twisting passages climb north, a whispering fork opens east, and a bone-strewn pit falls away to the south while the western wall remains buried.",
         },
         {
             "name": "Whispering Fork",
-            "description": "Whispers ride the draft, hinting at unseen side passages.",
+            "description": "Whispers ride the draft, hinting at unseen side passages. Rat tunnels emerge from the north, a goblin outpost stands to the east, collapsed dormitories stretch south, and the shaft rubble presses close to the west.",
         },
         {
             "name": "Goblin Outpost",
-            "description": "Makeshift barricades guard a cluster of stolen crates.",
+            "description": "Makeshift barricades guard a cluster of stolen crates. The sunken den growls to the north, fungal farms expand eastward, a makeshift shrine flickers to the south, and the whispering fork provides a western retreat.",
             "mobs": ["goblin", "goblin"],
         },
         {
             "name": "Fungal Farms",
-            "description": "Rows of edible fungus grow in carefully scraped troughs.",
+            "description": "Rows of edible fungus grow in carefully scraped troughs. Goblin outposts bustle to the west, a guard post holds watch to the east, the overseer chamber looms south, and the broken cart room is only a stair north.",
             "mobs": ["goblin"],
         },
         {
             "name": "Guard Post",
-            "description": "A pair of overturned barrels serve as a crude lookout.",
+            "description": "A pair of overturned barrels serve as a crude lookout. Spore fields lie to the west, abandoned barracks slump to the east, goblin farmers labor northward, and drills echo from the hall to the south.",
             "mobs": ["goblin"],
         },
         {
             "name": "Abandoned Barracks",
-            "description": "Rotten bedrolls and broken spears lie scattered across the floor.",
+            "description": "Rotten bedrolls and broken spears lie scattered across the floor. The underground brook murmurs to the north, a shimmering pool gleams to the east, the crystal vein tunnels run south, and the guard post watches from the west.",
             "search": {
                 "dc": 13,
                 "ability": "wis",
@@ -256,22 +259,22 @@ DUNGEON_1_MAP = [
         },
         {
             "name": "Shimmering Pool",
-            "description": "Still water reflects the cavern roof like polished glass.",
+            "description": "Still water reflects the cavern roof like polished glass. Slick steps climb north, a vent shaft plunges south, and abandoned barracks lie to the west while crystal-studded walls block the eastern edge.",
         },
     ],
     [
         {
             "name": "Bone Pile",
-            "description": "Heap of cracked bones crunch underfoot.",
+            "description": "Heap of cracked bones crunch underfoot. Rubble passages climb north to the collapsed shaft, a ruined dormitory slumps east, and molten heat rises from a lava fissure to the south while the western face is sealed.",
             "mobs": ["kobold"],
         },
         {
             "name": "Collapsed Dormitory",
-            "description": "Splintered bunks sag beneath a partial ceiling collapse.",
+            "description": "Splintered bunks sag beneath a partial ceiling collapse. Whispering passages return north, a makeshift shrine glows to the east, a chasm edge yawns south, and the bone pile lies to the west.",
         },
         {
             "name": "Makeshift Shrine",
-            "description": "Charred sigils mark a shrine to a forgotten subterranean spirit.",
+            "description": "Charred sigils mark a shrine to a forgotten subterranean spirit. Goblin sentries watch from the north, the overseer chamber stands eastward, a fortified guardroom waits to the south, and collapsed dormitories slump to the west.",
             "search": {
                 "dc": 14,
                 "ability": "wis",
@@ -282,45 +285,45 @@ DUNGEON_1_MAP = [
         },
         {
             "name": "Overseer Chamber",
-            "description": "A carved desk and ledger hint at the mine's orderly past.",
+            "description": "A carved desk and ledger hint at the mine's orderly past. Fungal farms line the northern balcony, the drill hall roars to the east, supply depots extend south, and the shrine's altar stands to the west.",
             "mobs": ["goblin"],
         },
         {
             "name": "Drill Hall",
-            "description": "Rusted drills and chains litter this wide chamber.",
+            "description": "Rusted drills and chains litter this wide chamber. Guard posts hold the northern arch, a crystal vein sparkles to the east, a trophy chamber stands to the south, and the overseer chamber commands the west.",
             "mobs": ["kobold"],
         },
         {
             "name": "Crystal Vein",
-            "description": "Chunks of quartz jut from the walls, catching stray light.",
+            "description": "Chunks of quartz jut from the walls, catching stray light. Abandoned barracks loom to the north, a vent shaft gusts eastward, hidden workshops wait to the south, and the drill hall rattles to the west.",
         },
         {
             "name": "Vent Shaft",
-            "description": "A narrow chimney breathes cool air from unseen depths.",
+            "description": "A narrow chimney breathes cool air from unseen depths. The shimmering pool lies to the north, the lower spiral plunges south, and crystal veins glitter to the west while the eastern wall remains sheer.",
         },
     ],
     [
         {
             "name": "Lava Fissure",
-            "description": "A faint red glow issues from a crack radiating gentle heat.",
+            "description": "A faint red glow issues from a crack radiating gentle heat. The bone pile rises to the north, a chasm edge stretches east, and molten rock bars any passage further south or west.",
         },
         {
             "name": "Chasm Edge",
-            "description": "A sheer drop-off disappears into rumbling darkness.",
+            "description": "A sheer drop-off disappears into rumbling darkness. Collapsed dormitories lie to the north, a deep guardroom holds the eastern ledge, and the lava fissure glows to the west while the abyss blocks the southern path.",
         },
         {
             "name": "Deep Guardroom",
-            "description": "Barricades of scavenged timber block an advance deeper inside.",
+            "description": "Barricades of scavenged timber block an advance deeper inside. The makeshift shrine flickers northward, the supply depot stacks to the east, and the chasm edge yawns to the west while darkness falls away to the south.",
             "mobs": ["kobold", "kobold"],
         },
         {
             "name": "Supply Depot",
-            "description": "Shelves of pilfered supplies are kept in meticulous order.",
+            "description": "Shelves of pilfered supplies are kept in meticulous order. Overseer chambers rise to the north, trophy racks gleam to the east, deep guardrooms stand to the west, and the floor drops sharply to the south.",
             "mobs": ["kobold"],
         },
         {
             "name": "Trophy Chamber",
-            "description": "Tattered banners and trophies from surface raids hang proudly.",
+            "description": "Tattered banners and trophies from surface raids hang proudly. Drill halls ring just north, a hidden workshop clatters to the east, and the supply depot borders to the west while the cavern wall seals the southern edge.",
             "search": {
                 "dc": 15,
                 "ability": "int",
@@ -331,42 +334,45 @@ DUNGEON_1_MAP = [
         },
         {
             "name": "Hidden Workshop",
-            "description": "Tools for trap making lie scattered across stone benches.",
+            "description": "Tools for trap making lie scattered across stone benches. Crystal veins shimmer to the north, the lower spiral descends eastward, and the trophy chamber sits to the west while the southern rock wall is unyielding.",
             "mobs": ["kobold"],
         },
         {
             "name": "Lower Spiral",
-            "description": "A tight spiral stair descends into silent blackness.",
+            "description": "A tight spiral stair descends into silent blackness. The vent shaft exhales cool air from the north, the hidden workshop adjoins to the west, and sheer stone seals the south and east.",
         },
     ],
 ]
 
 DUNGEON_2_MAP = [
     [
-        {"name": "Iridescent Approach", "description": "Rainbow motes drift through the humid entrance hall."},
+        {
+            "name": "Iridescent Approach",
+            "description": "Rainbow motes drift through the humid entrance hall. Glittering runoff flows to the east, the Singing Cavern hums to the south, and jagged crystal walls prevent any retreat to the north or west.",
+        },
         {
             "name": "Glittering Runoff",
-            "description": "Streams of mineral-laden water shimmer like liquid glass.",
+            "description": "Streams of mineral-laden water shimmer like liquid glass. The approach opens west, shattered columns topple to the east, and a stair spirals south toward Echo Falls while crystal-crusted walls block the northern face.",
             "mobs": ["kobold"],
         },
         {
             "name": "Shattered Column",
-            "description": "Crystal shards jut from a toppled pillar.",
+            "description": "Crystal shards jut from a toppled pillar. Glittering runoff pools to the west, the Crystal Gate rises to the east, and the Kobold Watchpost waits down a ramp to the south while the ceiling presses low overhead.",
         },
         {
             "name": "Crystal Gate",
-            "description": "A lattice of quartz bars blocks the path and glows softly.",
+            "description": "A lattice of quartz bars blocks the path and glows softly. Shattered columns lie to the west, the prismatic vestibule beams to the east, and the gate itself seals the northern archway while the Crystal Gate Lattice bars passage south toward the Shimmer Forge.",
             "mobs": ["kobold"],
         },
         {
             "name": "Prismatic Vestibule",
-            "description": "Spectral light spills from a pedestal where a faceted warp stone rotates slowly in mid-air.",
+            "description": "Spectral light spills from a pedestal where a faceted warp stone rotates slowly in mid-air. The Crystal Gate gleams to the west, a cliffside overlook stretches east, and gemcutters labor to the south while the cavern roof seals the north.",
             "warp_description": "The suspended warp stone pulses invitingly, ready to fold space back to Greyford Village.",
             "travel_to": {"zone": "village", "start": VILLAGE_START},
         },
         {
             "name": "Facet Overlook",
-            "description": "A ledge overlooks a crystalline canyon humming with resonance.",
+            "description": "A ledge overlooks a crystalline canyon humming with resonance. The vestibule shimmers to the west, luminous cradles glow to the east, and a maze of mirrors coils south while sheer drops guard the north.",
             "search": {
                 "dc": 14,
                 "ability": "int",
@@ -377,18 +383,18 @@ DUNGEON_2_MAP = [
         },
         {
             "name": "Luminous Cradle",
-            "description": "Nestled geodes emit a gentle violet glow.",
+            "description": "Nestled geodes emit a gentle violet glow. The overlook lies to the west, a fractured ramp angles eastward, and glowing barracks bustle to the south while the ceiling vaults high above.",
             "mobs": ["kobold"],
         },
         {
             "name": "Fractured Ramp",
-            "description": "A sloping ramp splits, descending toward resonant caverns.",
+            "description": "A sloping ramp splits, descending toward resonant caverns. Luminous nests lie to the west, the rune circle glows below to the south, and splintered stone denies travel north or east.",
         },
     ],
     [
         {
             "name": "Singing Cavern",
-            "description": "Every step sets the crystals humming in delicate harmony.",
+            "description": "Every step sets the crystals humming in delicate harmony. The iridescent approach opens north, Echo Falls roars to the east, and azure hollows widen to the south while the western wall remains untouched.",
             "search": {
                 "dc": 13,
                 "ability": "wis",
@@ -399,21 +405,21 @@ DUNGEON_2_MAP = [
         },
         {
             "name": "Echo Falls",
-            "description": "A waterfall cascades through crystalline prisms, scattering light.",
+            "description": "A waterfall cascades through crystalline prisms, scattering light. Glittering runoff pours from the north, the Kobold Watchpost crouches to the east, and chittering warrens stretch south while the cascade forms a barrier to the west.",
         },
         {
             "name": "Kobold Watchpost",
-            "description": "Kobolds have carved slits into the wall for hidden crossbows.",
+            "description": "Kobolds have carved slits into the wall for hidden crossbows. Shattered columns rise to the north, the Shimmer Forge blazes to the east, moonstone chambers lie to the south, and Echo Falls thunders to the west.",
             "mobs": ["kobold", "kobold"],
         },
         {
             "name": "Shimmer Forge",
-            "description": "Forges burn with blue fire, shaping crystal arrowheads.",
+            "description": "Forges burn with blue fire, shaping crystal arrowheads. The Kobold Watchpost guards the western arch, Gemcutter's Bench hums to the east, icy crevasses sink to the south, and the Crystal Gate Lattice looms along the northern doorway, usually sealed against intruders.",
             "mobs": ["kobold"],
         },
         {
             "name": "Gemcutter's Bench",
-            "description": "Polishing wheels spin, leaving glittering dust across the stone.",
+            "description": "Polishing wheels spin, leaving glittering dust across the stone. The prismatic vestibule hovers to the north, the crystal maze reflects to the east, guardian constructs muster to the south, and the forge's sparks fly to the west.",
             "search": {
                 "dc": 15,
                 "ability": "int",
@@ -424,31 +430,31 @@ DUNGEON_2_MAP = [
         },
         {
             "name": "Crystal Maze",
-            "description": "Mirrored walls create bewildering reflections of yourself.",
+            "description": "Mirrored walls create bewildering reflections of yourself. The overlook beckons north, glowing barracks lie to the east, resonant vaults hum to the south, and gemcutters labor to the west.",
         },
         {
             "name": "Glowing Barracks",
-            "description": "Sleeping pallets surround lanterns filled with glowing moss.",
+            "description": "Sleeping pallets surround lanterns filled with glowing moss. Luminous cradles rest to the north, the rune circle shimmers to the east, crystal nurseries lie to the south, and the maze's reflections are to the west.",
             "mobs": ["kobold"],
         },
         {
             "name": "Rune Circle",
-            "description": "A circle of runes thrums with latent power.",
+            "description": "A circle of runes thrums with latent power. The fractured ramp descends from the north, the veiled passage winds south, and glowing barracks anchor the western edge while cracked stone blocks the eastern cliff.",
         },
     ],
     [
         {
             "name": "Azure Hollow",
-            "description": "Blue quartz formations twist like frozen waves.",
+            "description": "Blue quartz formations twist like frozen waves. Singing Cavern harmonics spill from the north, chittering warrens coil to the east, and violet depths plunge south while the western wall gleams unbroken.",
         },
         {
             "name": "Chittering Warrens",
-            "description": "Narrow burrows ring with the chatter of unseen kobolds.",
+            "description": "Narrow burrows ring with the chatter of unseen kobolds. Echo Falls echoes to the north, Moonstone Chamber glows to the east, Hoard Gallery stretches south, and Azure Hollow opens west.",
             "mobs": ["kobold", "kobold"],
         },
         {
             "name": "Moonstone Chamber",
-            "description": "Soft white light spills from polished moonstones embedded in the floor.",
+            "description": "Soft white light spills from polished moonstones embedded in the floor. The Kobold Watchpost stands to the north, an icy crevasse chills the east, Geode Sanctum gleams to the south, and the warrens chatter to the west.",
             "search": {
                 "dc": 14,
                 "ability": "wis",
@@ -459,41 +465,41 @@ DUNGEON_2_MAP = [
         },
         {
             "name": "Icy Crevasse",
-            "description": "Cold vapors billow from a deep crack rimed with frost.",
+            "description": "Cold vapors billow from a deep crack rimed with frost. The Shimmer Forge smolders to the north, guardian constructs await to the east, the Glinting Archive lies south, and moonstones glow to the west.",
         },
         {
             "name": "Guardian Nexus",
-            "description": "Crystal sentries loom over a dais carved with warding sigils.",
+            "description": "Crystal sentries loom over a dais carved with warding sigils. Gemcutter's Bench is to the north, the resonant vault hums eastward, the Crystal Throne commands the south, and icy fissures chill the west.",
             "mobs": ["kobold"],
         },
         {
             "name": "Resonant Vault",
-            "description": "The air vibrates with a constant low hum that prickles your teeth.",
+            "description": "The air vibrates with a constant low hum that prickles your teeth. The crystal maze reflects to the north, crystal nurseries brood to the east, the ritual pool lies to the south, and guardian sentries stand to the west.",
             "mobs": ["goblin"],
         },
         {
             "name": "Crystal Nursery",
-            "description": "Small geodes cradle faintly glowing eggs.",
+            "description": "Small geodes cradle faintly glowing eggs. Glowing barracks bustle to the north, the veiled passage drifts east, darkened faults rumble south, and the resonant vault hums to the west.",
             "mobs": ["kobold"],
         },
         {
             "name": "Veiled Passage",
-            "description": "Veils of hanging crystals sway gently in the draft.",
+            "description": "Veils of hanging crystals sway gently in the draft. The rune circle is to the north, the collapsed escape slumps south, and crystal nurseries shimmer to the west while an abyss blocks the eastern rim.",
         },
     ],
     [
         {
             "name": "Violet Depth",
-            "description": "Deep amethyst crystals pulse with a slow, steady light.",
+            "description": "Deep amethyst crystals pulse with a slow, steady light. Azure hollow corridors rise to the north, hoarded spoils lie to the east, and a sheer drop bars travel further south or west.",
         },
         {
             "name": "Hoard Gallery",
-            "description": "Neat piles of sorted gemstones testify to recent raids.",
+            "description": "Neat piles of sorted gemstones testify to recent raids. Chittering warrens open to the north, the Geode Sanctum glitters to the east, and violet depths border the west while the floor falls away to the south.",
             "mobs": ["kobold"],
         },
         {
             "name": "Geode Sanctum",
-            "description": "A titanic geode splits open, revealing a hollow filled with riches.",
+            "description": "A titanic geode splits open, revealing a hollow filled with riches. Moonstone chambers gleam to the north, the Glinting Archive stores records to the east, and the Hoard Gallery rests to the west while the southern wall remains sealed.",
             "search": {
                 "dc": 16,
                 "ability": "int",
@@ -504,25 +510,25 @@ DUNGEON_2_MAP = [
         },
         {
             "name": "Glinting Archive",
-            "description": "Shelves of crystal tablets refract the light into rainbow sigils.",
+            "description": "Shelves of crystal tablets refract the light into rainbow sigils. The Icy Crevasse chills the north, the Crystal Throne commands the east, and the Geode Sanctum lines the west while silence hangs over the southern descent.",
         },
         {
             "name": "Crystal Throne",
-            "description": "An ornate seat of quartz watches over the chamber like a judge.",
+            "description": "An ornate seat of quartz watches over the chamber like a judge. Guardian sentries stand to the north, the ritual pool mirrors to the east, the Glinting Archive holds records to the west, and basalt walls bar any southern route.",
             "mobs": ["kobold", "kobold"],
         },
         {
             "name": "Ritual Pool",
-            "description": "A still pool mirrors the ceiling perfectly despite the cavern's breeze.",
+            "description": "A still pool mirrors the ceiling perfectly despite the cavern's breeze. The resonant vault hums to the north, the darkened fault rumbles to the east, and the Crystal Throne gleams to the west while underground currents seal the south.",
         },
         {
             "name": "Darkened Fault",
-            "description": "Shadowed cracks hint at deeper tunnels still unexplored.",
+            "description": "Shadowed cracks hint at deeper tunnels still unexplored. Crystal nurseries line the north, the collapsed escape slumps to the east, and the ritual pool shines to the west while the ground fractures into impassable darkness southward.",
             "mobs": ["goblin"],
         },
         {
             "name": "Collapsed Escape",
-            "description": "A former exit lies sealed by a recent cave-in.",
+            "description": "A former exit lies sealed by a recent cave-in. The veiled passage whispers to the north, the darkened fault borders west, and shattered rock walls block all hope of moving south or east.",
         },
     ],
 ]
