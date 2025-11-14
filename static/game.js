@@ -131,9 +131,22 @@ chatForm.addEventListener("submit", (evt) => {
 
 function renderCharacterPanel(character) {
   if (charSummaryEl) {
-    const identity = [character.race, character.char_class].filter(Boolean).join(" ");
-    const levelLabel = character.level ? ` (Level ${character.level})` : "";
-    charSummaryEl.textContent = `${identity || "Unknown"}${levelLabel}`;
+    const summaryParts = [];
+    if (character.name) summaryParts.push(character.name);
+    const lineage = [character.race, character.char_class].filter(Boolean).join(" ");
+    if (lineage) summaryParts.push(lineage);
+    if (character.level) summaryParts.push(`Level ${character.level}`);
+    charSummaryEl.textContent = summaryParts.join(" • ") || "Unknown adventurer";
+  }
+  const bioEl = document.getElementById("character-bio");
+  if (bioEl) {
+    bioEl.textContent = character.bio || "";
+    bioEl.hidden = !bioEl.textContent;
+  }
+  const descriptionEl = document.getElementById("character-description");
+  if (descriptionEl) {
+    descriptionEl.textContent = character.description || "";
+    descriptionEl.hidden = !descriptionEl.textContent;
   }
   if (hpEl && typeof character.hp !== "undefined" && typeof character.max_hp !== "undefined") {
     hpEl.textContent = `${character.hp} / ${character.max_hp}`;

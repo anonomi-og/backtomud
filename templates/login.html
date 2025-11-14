@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MUD MVP - Login</title>
+    <title>Back to MUD - Login</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   </head>
   <body class="login-body">
@@ -24,32 +24,18 @@
       {% endwith %}
 
       <form method="post" class="login-form">
-        <label>Username</label>
-        <input type="text" name="username" required>
+        <label for="username">Username</label>
+        <input id="username" type="text" name="username" autocomplete="username" required>
 
-        <label>Password</label>
-        <input type="password" name="password" required>
-
-        <label>Race (used when registering)</label>
-        <select name="race">
-          {% for race in race_options %}
-            <option value="{{ race }}">{{ race }}</option>
-          {% endfor %}
-        </select>
-
-        <label>Class (used when registering)</label>
-        <select name="char_class">
-          {% for cls in class_options %}
-            <option value="{{ cls }}">{{ cls }}</option>
-          {% endfor %}
-        </select>
-        <div class="help-text">Race/class only matter for new accounts.</div>
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password" autocomplete="current-password" required>
 
         <div class="buttons">
-          <button type="submit" name="action" value="login">Login</button>
+          <button type="submit" name="action" value="login">Log in</button>
           <button type="submit" name="action" value="register">Register</button>
         </div>
       </form>
+      <p class="login-help">New heroes can register with a username and password. Already have an account? Log in to choose your character.</p>
     </div>
   </body>
 </html>

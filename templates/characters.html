@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Back to MUD - Characters</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body class="characters-body">
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="header-title">
+          <div class="brand-mark">Back to MUD</div>
+          <div class="header-meta">Account: <strong>{{ account_username }}</strong></div>
+        </div>
+        <div class="header-actions">
+          <a class="ghost-button" href="{{ url_for('logout') }}">Logout</a>
+        </div>
+      </header>
+
+      {% with messages = get_flashed_messages() %}
+        {% if messages %}
+          <ul class="flash flash-inline">
+            {% for msg in messages %}
+              <li>{{ msg }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endwith %}
+
+      <main class="characters-layout">
+        <section class="panel character-management">
+          <div class="panel-header">
+            <h2>Your characters</h2>
+            <p class="panel-subtitle">You can maintain up to {{ max_characters }} adventurers.</p>
+          </div>
+
+          {% if characters %}
+            <div class="character-grid">
+              {% for char in characters %}
+                <article class="character-tile">
+                  <header class="tile-header">
+                    <h3>{{ char.name }}</h3>
+                    <p class="tile-meta">
+                      {{ char.race or 'Unknown' }} {{ char.char_class or '' }}
+                      • Level {{ char.level or 1 }}
+                    </p>
+                  </header>
+                  {% if char.bio %}
+                    <p class="tile-bio">{{ char.bio }}</p>
+                  {% endif %}
+                  {% if char.description %}
+                    <p class="tile-description">{{ char.description }}</p>
+                  {% endif %}
+                  <dl class="tile-stats">
+                    <div><dt>HP</dt><dd>{{ char.current_hp }}/{{ char.hp }}</dd></div>
+                    <div><dt>XP</dt><dd>{{ char.xp }}</dd></div>
+                    <div><dt>Gold</dt><dd>{{ char.gold }}</dd></div>
+                  </dl>
+                  <div class="tile-actions">
+                    <form method="post" action="{{ url_for('play_character', character_id=char.id) }}">
+                      <button type="submit">Play</button>
+                    </form>
+                    <form method="post" action="{{ url_for('delete_character_route', character_id=char.id) }}" onsubmit="return confirm('Delete {{ char.name }}? This cannot be undone.');">
+                      <button type="submit" class="danger">Delete</button>
+                    </form>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="empty-state">
+              <h3>No characters yet</h3>
+              <p>Create a hero to begin your adventure.</p>
+            </div>
+          {% endif %}
+
+          <div class="character-actions">
+            {% if characters|length < max_characters %}
+              <a class="primary-button" href="{{ url_for('new_character') }}">Create a character</a>
+            {% else %}
+              <p class="limit-note">You have reached the maximum number of characters.</p>
+            {% endif %}
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
