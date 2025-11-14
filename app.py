@@ -16,50 +16,523 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 DB_PATH = "game.db"
 
-# --- Simple world definition (fixed map) ---
-WORLD_WIDTH = 5
-WORLD_HEIGHT = 5
+# --- Multi-zone world definition (grid based maps) ---
+DEFAULT_ZONE = "village"
+VILLAGE_START = (2, 2)
+DUNGEON_1_START = (3, 0)
+DUNGEON_2_START = (4, 0)
 
-WORLD_MAP = [
+VILLAGE_MAP = [
     [
-        {"name": "Grassy clearing", "description": "A small patch of grass under a grey sky."},
-        {"name": "Old oak tree", "description": "A huge oak dominates the area, branches creaking."},
-        {"name": "Rocky outcrop", "description": "Jagged rocks jut out of the ground."},
-        {"name": "Shallow stream", "description": "A trickling stream cuts through the dirt."},
-        {"name": "Ruined wall", "description": "Remnants of a stone wall, long collapsed."},
+        {
+            "name": "Northern Gate",
+            "description": "Timber palisades creak while a sentry nods as you pass beneath the gate arch.",
+        },
+        {
+            "name": "Merchant Row",
+            "description": "Stalls line the street with bolts of cloth and fresh produce neatly displayed.",
+        },
+        {
+            "name": "Shrine Steps",
+            "description": "Stone steps lead to a modest shrine where votive candles gutter in the breeze.",
+        },
+        {
+            "name": "Watchtower Shadow",
+            "description": "The shadow of the wooden watchtower stretches across crates of supplies.",
+        },
+        {
+            "name": "Crumbling Wall",
+            "description": "Weathered masonry from an older fortification lies half-buried in the sod.",
+        },
     ],
     [
-        {"name": "Dirt path", "description": "A worn path runs north to south."},
-        {"name": "Fork in the path", "description": "The path splits in several directions."},
-        {"name": "Lonely signpost", "description": "A signpost with faded, unreadable markings."},
-        {"name": "Barren patch", "description": "The soil here is dry and cracked."},
-        {"name": "Abandoned camp", "description": "Cold ashes and torn canvas flutter in the wind."},
+        {
+            "name": "Thatched Cottages",
+            "description": "Smoke from cookfires drifts lazily above tidy thatched cottages.",
+        },
+        {
+            "name": "Herbalist Garden",
+            "description": "Raised beds of fragrant herbs attract bees and the occasional wandering villager.",
+        },
+        {
+            "name": "Town Hall",
+            "description": "A timbered hall where the elder settles disputes and keeps the ledger.",
+        },
+        {
+            "name": "Storage Barn",
+            "description": "Barrels of grain and bundled hay are stacked beneath a wide loft.",
+        },
+        {
+            "name": "Wagon Yard",
+            "description": "Wooden wagons await repair beside piles of seasoned lumber.",
+        },
     ],
     [
-        {"name": "Shallow pit", "description": "A shallow pit filled with loose stones."},
-        {"name": "Tall grass", "description": "Grass up to your waist rustles around you."},
-        {"name": "Central crossroads", "description": "Paths lead in every direction."},
-        {"name": "Fallen log", "description": "A mossy log lies across the ground."},
-        {"name": "Quiet hollow", "description": "The world feels muffled and still here."},
+        {
+            "name": "Baker's Lane",
+            "description": "Warm smells of bread drift from an open oven while apprentices hurry by.",
+        },
+        {
+            "name": "Market Stalls",
+            "description": "Vendors haggle over coppers as curious travelers browse their wares.",
+        },
+        {
+            "name": "Village Square",
+            "description": "A cobbled square with a communal well and notice board.",
+        },
+        {
+            "name": "Blacksmith Forge",
+            "description": "Sparks fly from the anvil as the smith hammers glowing iron.",
+        },
+        {
+            "name": "Old Mine Entrance",
+            "description": "A timber-braced tunnel yawns beneath the hill, cold air flowing outward.",
+            "travel_to": {"zone": "dungeon_1", "start": DUNGEON_1_START},
+        },
     ],
     [
-        {"name": "Muddy track", "description": "Your boots squelch in thick mud."},
-        {"name": "Low hill", "description": "You can see a little further from here."},
-        {"name": "Thicket", "description": "Tangled branches make movement awkward."},
-        {"name": "Stone circle", "description": "Weathered stones form a crude circle."},
-        {"name": "Old well", "description": "An ancient well, its rope long gone."},
+        {
+            "name": "Forest Path",
+            "description": "A narrow track winds toward the dark pines east of the village.",
+        },
+        {
+            "name": "Ancient Well",
+            "description": "An ivy-wrapped stone well whispers with echoes from below.",
+            "search": {
+                "dc": 11,
+                "ability": "wis",
+                "success_text": "You notice a loose capstone and uncover a forgotten brooch tucked inside.",
+                "failure_text": "Cold water splashes your hands but nothing else reveals itself.",
+                "loot": ["forgotten_brooch"],
+            },
+        },
+        {
+            "name": "Lakeside Dock",
+            "description": "Wooden planks creak as small fishing boats bob against the pilings.",
+        },
+        {
+            "name": "Fisher's Hut",
+            "description": "Nets dry on racks beside a cottage that smells strongly of smoked trout.",
+        },
+        {
+            "name": "Abandoned Shed",
+            "description": "Broken tools litter a leaning shed reclaimed by moss.",
+        },
     ],
     [
-        {"name": "Edge of forest", "description": "Dark trees loom to the south."},
-        {"name": "Broken cart", "description": "A shattered cart lies in pieces."},
-        {"name": "Overgrown track", "description": "Nature is reclaiming this path."},
-        {"name": "Quiet glade", "description": "A peaceful glade with soft moss."},
-        {"name": "Crumbling tower base", "description": "The base of a long-fallen tower."},
+        {
+            "name": "South Field",
+            "description": "Rows of freshly turned soil promise a hearty autumn harvest.",
+        },
+        {
+            "name": "Hayloft",
+            "description": "Stacks of hay tower above the barn floor, a favorite hideout for village children.",
+        },
+        {
+            "name": "Sunken Stair",
+            "description": "Stone steps descend into a chill draught carrying the scent of crystal dust.",
+            "travel_to": {"zone": "dungeon_2", "start": DUNGEON_2_START},
+        },
+        {
+            "name": "Miller's Bridge",
+            "description": "A wooden bridge spans the millrace, slick with fine spray.",
+        },
+        {
+            "name": "Riverside Grove",
+            "description": "Tall willows shade a quiet bend in the river where frogs croak at dusk.",
+        },
     ],
 ]
 
-START_X = 2
-START_Y = 2  # central tile
+DUNGEON_1_MAP = [
+    [
+        {"name": "Sealed Tunnel", "description": "Rockfalls here leave only a narrow crawlspace."},
+        {
+            "name": "Dusty Landing",
+            "description": "Loose gravel litters the floor where miners once gathered.",
+            "mobs": ["giant_rat"],
+        },
+        {
+            "name": "Stalagmite Cluster",
+            "description": "Jagged pillars create cramped lanes through the cavern.",
+            "search": {
+                "dc": 12,
+                "ability": "int",
+                "success_text": "You pry apart two stalagmites and find a miner's scribbled map fragment.",
+                "failure_text": "Every crevice looks the same in the dim torchlight.",
+                "loot": ["ancient_coin"],
+            },
+        },
+        {
+            "name": "Collapsed Entrance",
+            "description": "Support beams groan as daylight filters through a broken shaft above.",
+            "travel_to": {"zone": "village", "start": VILLAGE_START},
+        },
+        {
+            "name": "Rubble Chute",
+            "description": "Fresh stones tumble occasionally from the sloped ceiling.",
+        },
+        {
+            "name": "Echoing Gallery",
+            "description": "Footsteps clap back in a chorus of hollow echoes.",
+        },
+        {
+            "name": "Dripping Alcove",
+            "description": "Mineral-heavy droplets patter into a shallow basin.",
+        },
+    ],
+    [
+        {
+            "name": "Twisting Hall",
+            "description": "Passages coil like a knot, worn smooth by decades of traffic.",
+            "mobs": ["giant_rat"],
+        },
+        {
+            "name": "Rat Warren",
+            "description": "Nests of frayed rope and cloth rustle with vermin.",
+            "mobs": ["giant_rat", "giant_rat"],
+        },
+        {
+            "name": "Sunken Den",
+            "description": "Moisture collects in a low pit surrounded by gnawed bones.",
+        },
+        {
+            "name": "Broken Cart",
+            "description": "A splintered ore cart lies on its side, spilling rusted tools.",
+        },
+        {
+            "name": "Fungus Grotto",
+            "description": "Bioluminescent caps cast a ghostly glow over the cavern.",
+            "mobs": ["giant_rat"],
+        },
+        {
+            "name": "Underground Brook",
+            "description": "An icy stream carves a shallow trench through the stone.",
+        },
+        {
+            "name": "Slick Steps",
+            "description": "A carved stairway descends deeper, slick with condensation.",
+        },
+    ],
+    [
+        {
+            "name": "Collapsed Shaft",
+            "description": "The remnants of a vertical shaft are choked with rubble.",
+        },
+        {
+            "name": "Whispering Fork",
+            "description": "Whispers ride the draft, hinting at unseen side passages.",
+        },
+        {
+            "name": "Goblin Outpost",
+            "description": "Makeshift barricades guard a cluster of stolen crates.",
+            "mobs": ["goblin", "goblin"],
+        },
+        {
+            "name": "Fungal Farms",
+            "description": "Rows of edible fungus grow in carefully scraped troughs.",
+            "mobs": ["goblin"],
+        },
+        {
+            "name": "Guard Post",
+            "description": "A pair of overturned barrels serve as a crude lookout.",
+            "mobs": ["goblin"],
+        },
+        {
+            "name": "Abandoned Barracks",
+            "description": "Rotten bedrolls and broken spears lie scattered across the floor.",
+            "search": {
+                "dc": 13,
+                "ability": "wis",
+                "success_text": "Beneath a cot you discover a goblin bugle wrapped in cloth.",
+                "failure_text": "Only moldy blankets and stale air greet your search.",
+                "loot": ["goblin_bugle"],
+            },
+        },
+        {
+            "name": "Shimmering Pool",
+            "description": "Still water reflects the cavern roof like polished glass.",
+        },
+    ],
+    [
+        {
+            "name": "Bone Pile",
+            "description": "Heap of cracked bones crunch underfoot.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Collapsed Dormitory",
+            "description": "Splintered bunks sag beneath a partial ceiling collapse.",
+        },
+        {
+            "name": "Makeshift Shrine",
+            "description": "Charred sigils mark a shrine to a forgotten subterranean spirit.",
+            "search": {
+                "dc": 14,
+                "ability": "wis",
+                "success_text": "Behind the altar you uncover a pouch of ancient coins.",
+                "failure_text": "The shrine offers only dust and unsettling whispers.",
+                "loot": ["ancient_coin"],
+            },
+        },
+        {
+            "name": "Overseer Chamber",
+            "description": "A carved desk and ledger hint at the mine's orderly past.",
+            "mobs": ["goblin"],
+        },
+        {
+            "name": "Drill Hall",
+            "description": "Rusted drills and chains litter this wide chamber.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Crystal Vein",
+            "description": "Chunks of quartz jut from the walls, catching stray light.",
+        },
+        {
+            "name": "Vent Shaft",
+            "description": "A narrow chimney breathes cool air from unseen depths.",
+        },
+    ],
+    [
+        {
+            "name": "Lava Fissure",
+            "description": "A faint red glow issues from a crack radiating gentle heat.",
+        },
+        {
+            "name": "Chasm Edge",
+            "description": "A sheer drop-off disappears into rumbling darkness.",
+        },
+        {
+            "name": "Deep Guardroom",
+            "description": "Barricades of scavenged timber block an advance deeper inside.",
+            "mobs": ["kobold", "kobold"],
+        },
+        {
+            "name": "Supply Depot",
+            "description": "Shelves of pilfered supplies are kept in meticulous order.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Trophy Chamber",
+            "description": "Tattered banners and trophies from surface raids hang proudly.",
+            "search": {
+                "dc": 15,
+                "ability": "int",
+                "success_text": "You catalogue the trophies and spot a gleaming ceremonial dagger hidden away.",
+                "failure_text": "Your fingers brush dusty trophies but no hidden prizes.",
+                "loot": ["kobold_sling"],
+            },
+        },
+        {
+            "name": "Hidden Workshop",
+            "description": "Tools for trap making lie scattered across stone benches.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Lower Spiral",
+            "description": "A tight spiral stair descends into silent blackness.",
+        },
+    ],
+]
+
+DUNGEON_2_MAP = [
+    [
+        {"name": "Iridescent Approach", "description": "Rainbow motes drift through the humid entrance hall."},
+        {
+            "name": "Glittering Runoff",
+            "description": "Streams of mineral-laden water shimmer like liquid glass.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Shattered Column",
+            "description": "Crystal shards jut from a toppled pillar.",
+        },
+        {
+            "name": "Crystal Gate",
+            "description": "A lattice of quartz bars blocks the path and glows softly.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Prismatic Vestibule",
+            "description": "Spectral light paints the walls in shifting hues.",
+            "travel_to": {"zone": "village", "start": VILLAGE_START},
+        },
+        {
+            "name": "Facet Overlook",
+            "description": "A ledge overlooks a crystalline canyon humming with resonance.",
+            "search": {
+                "dc": 14,
+                "ability": "int",
+                "success_text": "You chip free a flawless crystal teardrop wedged in the rock.",
+                "failure_text": "Your tools slip, sending shards tinkling into the abyss.",
+                "loot": ["crystal_teardrop"],
+            },
+        },
+        {
+            "name": "Luminous Cradle",
+            "description": "Nestled geodes emit a gentle violet glow.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Fractured Ramp",
+            "description": "A sloping ramp splits, descending toward resonant caverns.",
+        },
+    ],
+    [
+        {
+            "name": "Singing Cavern",
+            "description": "Every step sets the crystals humming in delicate harmony.",
+            "search": {
+                "dc": 13,
+                "ability": "wis",
+                "success_text": "Listening carefully, you find a hidden alcove containing a crystal teardrop.",
+                "failure_text": "The echoes overwhelm your senses, masking any secrets.",
+                "loot": ["crystal_teardrop"],
+            },
+        },
+        {
+            "name": "Echo Falls",
+            "description": "A waterfall cascades through crystalline prisms, scattering light.",
+        },
+        {
+            "name": "Kobold Watchpost",
+            "description": "Kobolds have carved slits into the wall for hidden crossbows.",
+            "mobs": ["kobold", "kobold"],
+        },
+        {
+            "name": "Shimmer Forge",
+            "description": "Forges burn with blue fire, shaping crystal arrowheads.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Gemcutter's Bench",
+            "description": "Polishing wheels spin, leaving glittering dust across the stone.",
+            "search": {
+                "dc": 15,
+                "ability": "int",
+                "success_text": "You collect a pouch of finely cut shards before the dust settles.",
+                "failure_text": "Your hands come away empty but sparkling with grit.",
+                "loot": ["crystal_teardrop"],
+            },
+        },
+        {
+            "name": "Crystal Maze",
+            "description": "Mirrored walls create bewildering reflections of yourself.",
+        },
+        {
+            "name": "Glowing Barracks",
+            "description": "Sleeping pallets surround lanterns filled with glowing moss.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Rune Circle",
+            "description": "A circle of runes thrums with latent power.",
+        },
+    ],
+    [
+        {
+            "name": "Azure Hollow",
+            "description": "Blue quartz formations twist like frozen waves.",
+        },
+        {
+            "name": "Chittering Warrens",
+            "description": "Narrow burrows ring with the chatter of unseen kobolds.",
+            "mobs": ["kobold", "kobold"],
+        },
+        {
+            "name": "Moonstone Chamber",
+            "description": "Soft white light spills from polished moonstones embedded in the floor.",
+            "search": {
+                "dc": 14,
+                "ability": "wis",
+                "success_text": "You locate a concealed niche holding an untouched moonstone shard.",
+                "failure_text": "Reflections play tricks on your eyes, hiding any clues.",
+                "loot": ["crystal_teardrop"],
+            },
+        },
+        {
+            "name": "Icy Crevasse",
+            "description": "Cold vapors billow from a deep crack rimed with frost.",
+        },
+        {
+            "name": "Guardian Nexus",
+            "description": "Crystal sentries loom over a dais carved with warding sigils.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Resonant Vault",
+            "description": "The air vibrates with a constant low hum that prickles your teeth.",
+            "mobs": ["goblin"],
+        },
+        {
+            "name": "Crystal Nursery",
+            "description": "Small geodes cradle faintly glowing eggs.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Veiled Passage",
+            "description": "Veils of hanging crystals sway gently in the draft.",
+        },
+    ],
+    [
+        {
+            "name": "Violet Depth",
+            "description": "Deep amethyst crystals pulse with a slow, steady light.",
+        },
+        {
+            "name": "Hoard Gallery",
+            "description": "Neat piles of sorted gemstones testify to recent raids.",
+            "mobs": ["kobold"],
+        },
+        {
+            "name": "Geode Sanctum",
+            "description": "A titanic geode splits open, revealing a hollow filled with riches.",
+            "search": {
+                "dc": 16,
+                "ability": "int",
+                "success_text": "You pry loose a rare heartstone from the geode's core.",
+                "failure_text": "The crystalline lattice refuses to part under your efforts.",
+                "loot": ["crystal_heartstone"],
+            },
+        },
+        {
+            "name": "Glinting Archive",
+            "description": "Shelves of crystal tablets refract the light into rainbow sigils.",
+        },
+        {
+            "name": "Crystal Throne",
+            "description": "An ornate seat of quartz watches over the chamber like a judge.",
+            "mobs": ["kobold", "kobold"],
+        },
+        {
+            "name": "Ritual Pool",
+            "description": "A still pool mirrors the ceiling perfectly despite the cavern's breeze.",
+        },
+        {
+            "name": "Darkened Fault",
+            "description": "Shadowed cracks hint at deeper tunnels still unexplored.",
+            "mobs": ["goblin"],
+        },
+        {
+            "name": "Collapsed Escape",
+            "description": "A former exit lies sealed by a recent cave-in.",
+        },
+    ],
+]
+
+
+def make_world(name, tile_map, start):
+    height = len(tile_map)
+    width = len(tile_map[0]) if height else 0
+    return {"name": name, "map": tile_map, "start": start, "width": width, "height": height}
+
+
+WORLDS = {
+    "village": make_world("Greyford Village", VILLAGE_MAP, VILLAGE_START),
+    "dungeon_1": make_world("Old Mine", DUNGEON_1_MAP, DUNGEON_1_START),
+    "dungeon_2": make_world("Crystal Depths", DUNGEON_2_MAP, DUNGEON_2_START),
+}
 
 ABILITY_KEYS = ("str", "dex", "con", "int", "wis", "cha")
 DEFAULT_RACE = "Human"
@@ -101,6 +574,26 @@ GENERAL_ITEMS = {
         "name": "Kobold Sling",
         "description": "A worn leather sling sized for small hands. Still functional.",
         "rarity": "common",
+    },
+    "forgotten_brooch": {
+        "name": "Forgotten Brooch",
+        "description": "A tarnished family brooch depicting the village crest.",
+        "rarity": "common",
+    },
+    "ancient_coin": {
+        "name": "Ancient Mine Coin",
+        "description": "An old silver coin stamped with a miner's pick emblem.",
+        "rarity": "uncommon",
+    },
+    "crystal_teardrop": {
+        "name": "Crystal Teardrop",
+        "description": "A flawless droplet of crystal that glows faintly when held.",
+        "rarity": "uncommon",
+    },
+    "crystal_heartstone": {
+        "name": "Crystal Heartstone",
+        "description": "A rare heartstone that pulses with inner light from the crystal depths.",
+        "rarity": "rare",
     },
 }
 
@@ -873,30 +1366,51 @@ _mob_counter = 0
 _loot_counter = 0
 
 
-def room_name(x, y):
-    return f"room_{x}_{y}"
+def get_world(zone):
+    return WORLDS.get(zone, WORLDS[DEFAULT_ZONE])
 
 
-def get_room_info(x, y):
-    if 0 <= x < WORLD_WIDTH and 0 <= y < WORLD_HEIGHT:
-        return WORLD_MAP[y][x]
+def get_world_dimensions(zone):
+    world = get_world(zone)
+    return world["width"], world["height"]
+
+
+def get_world_map(zone):
+    return get_world(zone)["map"]
+
+
+def get_world_start(zone):
+    return get_world(zone)["start"]
+
+
+def room_name(zone, x, y):
+    return f"room_{zone}_{x}_{y}"
+
+
+def get_room_info(zone, x, y):
+    width, height = get_world_dimensions(zone)
+    if 0 <= x < width and 0 <= y < height:
+        return get_world_map(zone)[y][x]
     return {"name": "Unknown void", "description": "You should not be here."}
 
 
-def get_players_in_room(x, y):
-    return [u for u, p in players.items() if p["x"] == x and p["y"] == y]
+def get_players_in_room(zone, x, y):
+    return [u for u, p in players.items() if p.get("zone", DEFAULT_ZONE) == zone and p["x"] == x and p["y"] == y]
 
 
-def random_world_position(exclude=None):
+def random_world_position(zone, exclude=None):
     exclude = set(exclude or [])
+    width, height = get_world_dimensions(zone)
+    if width == 0 or height == 0:
+        return 0, 0
     attempts = 0
     while attempts < 50:
-        x = random.randrange(WORLD_WIDTH)
-        y = random.randrange(WORLD_HEIGHT)
+        x = random.randrange(width)
+        y = random.randrange(height)
         if (x, y) not in exclude:
             return x, y
         attempts += 1
-    return random.randrange(WORLD_WIDTH), random.randrange(WORLD_HEIGHT)
+    return random.randrange(width), random.randrange(height)
 
 
 def roll_hit_points_from_notation(notation, fallback):
@@ -935,13 +1449,14 @@ def roll_hit_points_from_notation(notation, fallback):
     return max(1, total)
 
 
-def spawn_mob(template_key, x=None, y=None):
+def spawn_mob(template_key, x=None, y=None, zone=None):
     template = MOB_TEMPLATES.get(template_key)
     if not template:
         return None
     global _mob_counter
+    zone = zone or DEFAULT_ZONE
     if x is None or y is None:
-        x, y = random_world_position(exclude={(START_X, START_Y)})
+        x, y = random_world_position(zone)
     _mob_counter += 1
     hp = roll_hit_points_from_notation(template.get("hp_dice"), template.get("hp", 1))
     mob_id = f"{template_key}-{_mob_counter}"
@@ -949,6 +1464,7 @@ def spawn_mob(template_key, x=None, y=None):
         "id": mob_id,
         "template": template_key,
         "name": template.get("name", template_key.title()),
+        "zone": zone,
         "x": x,
         "y": y,
         "ac": template.get("ac", 10),
@@ -974,17 +1490,21 @@ def spawn_mob(template_key, x=None, y=None):
 
 
 def spawn_initial_mobs():
-    occupied = {(START_X, START_Y)}
-    for key, template in MOB_TEMPLATES.items():
-        count = max(1, int(template.get("initial_spawns", 1)))
-        for _ in range(count):
-            x, y = random_world_position(exclude=occupied)
-            occupied.add((x, y))
-            spawn_mob(key, x, y)
+    mobs.clear()
+    for zone, world in WORLDS.items():
+        tile_map = world["map"]
+        for y, row in enumerate(tile_map):
+            for x, tile in enumerate(row):
+                for template_key in tile.get("mobs", []):
+                    spawn_mob(template_key, x, y, zone)
 
 
-def get_mobs_in_room(x, y):
-    return [mob for mob in mobs.values() if mob["alive"] and mob["x"] == x and mob["y"] == y]
+def get_mobs_in_room(zone, x, y):
+    return [
+        mob
+        for mob in mobs.values()
+        if mob["alive"] and mob.get("zone", DEFAULT_ZONE) == zone and mob["x"] == x and mob["y"] == y
+    ]
 
 
 def format_mob_payload(mob):
@@ -1000,11 +1520,11 @@ def format_mob_payload(mob):
     }
 
 
-def find_mob_in_room(identifier, x, y):
+def find_mob_in_room(identifier, zone, x, y):
     if not identifier:
         return None
     lookup = identifier.strip().lower()
-    for mob in get_mobs_in_room(x, y):
+    for mob in get_mobs_in_room(zone, x, y):
         if mob["id"].lower() == lookup or mob["name"].lower() == lookup:
             return mob
     return None
@@ -1032,7 +1552,10 @@ def mob_combat_loop(mob_id):
             if not player or player["hp"] <= 0:
                 targets.discard(username)
                 continue
-            if (player["x"], player["y"]) != (mob["x"], mob["y"]):
+            if (
+                player.get("zone", DEFAULT_ZONE) != mob.get("zone", DEFAULT_ZONE)
+                or (player["x"], player["y"]) != (mob["x"], mob["y"])
+            ):
                 targets.discard(username)
                 continue
             engaged.append((username, player))
@@ -1054,7 +1577,7 @@ def mob_combat_loop(mob_id):
 
         target["hp"] = clamp_hp(target["hp"] - damage, target["max_hp"])
         update_user_current_hp(username, target["hp"])
-        room = room_name(mob["x"], mob["y"])
+        room = room_name(mob.get("zone", DEFAULT_ZONE), mob["x"], mob["y"])
         dmg_type = damage_info.get("type")
         suffix = f" {dmg_type} damage" if dmg_type else " damage"
         socketio.emit(
@@ -1063,7 +1586,7 @@ def mob_combat_loop(mob_id):
             room=room,
         )
         send_room_state(username)
-        broadcast_room_state(mob["x"], mob["y"])
+        broadcast_room_state(mob.get("zone", DEFAULT_ZONE), mob["x"], mob["y"])
 
         if target["hp"] == 0:
             socketio.emit(
@@ -1086,13 +1609,16 @@ def engage_mob_with_player(mob, username, auto=False):
     player = players.get(username)
     if not player or player["hp"] <= 0:
         return
-    if (player["x"], player["y"]) != (mob["x"], mob["y"]):
+    if (
+        player.get("zone", DEFAULT_ZONE) != mob.get("zone", DEFAULT_ZONE)
+        or (player["x"], player["y"]) != (mob["x"], mob["y"])
+    ):
         return
 
     targets = mob.setdefault("combat_targets", set())
     if username not in targets:
         targets.add(username)
-        room = room_name(mob["x"], mob["y"])
+        room = room_name(mob.get("zone", DEFAULT_ZONE), mob["x"], mob["y"])
         if auto:
             socketio.emit(
                 "system_message",
@@ -1116,7 +1642,9 @@ def engage_mob_with_player(mob, username, auto=False):
 
 
 def disengage_player_from_room_mobs(username, x, y):
-    for mob in get_mobs_in_room(x, y):
+    player = players.get(username)
+    zone = player.get("zone", DEFAULT_ZONE) if player else DEFAULT_ZONE
+    for mob in get_mobs_in_room(zone, x, y):
         targets = mob.setdefault("combat_targets", set())
         if username in targets:
             targets.discard(username)
@@ -1126,17 +1654,19 @@ def disengage_player_from_room_mobs(username, x, y):
 
 def trigger_aggressive_mobs_for_player(username, x, y):
     """Aggressive mobs attack as soon as a fresh player enters their room."""
-    for mob in get_mobs_in_room(x, y):
+    player = players.get(username)
+    zone = player.get("zone", DEFAULT_ZONE) if player else DEFAULT_ZONE
+    for mob in get_mobs_in_room(zone, x, y):
         if mob.get("behaviour_type") == "aggressive" and mob.get("alive"):
             engage_mob_with_player(mob, username, auto=True)
 
 
-def get_loot_in_room(x, y):
-    return list(room_loot.get((x, y), []))
+def get_loot_in_room(zone, x, y):
+    return list(room_loot.get((zone, x, y), []))
 
 
-def add_loot_to_room(x, y, loot_entry):
-    room_loot.setdefault((x, y), []).append(loot_entry)
+def add_loot_to_room(zone, x, y, loot_entry):
+    room_loot.setdefault((zone, x, y), []).append(loot_entry)
 
 
 def generate_loot_entry_gold(amount):
@@ -1324,10 +1854,12 @@ def format_effect_list(player):
 
 def build_player_state(user_record, sid):
     derived = derive_character_from_record(user_record)
+    start_x, start_y = get_world_start(DEFAULT_ZONE)
     state = {
         "sid": sid,
-        "x": START_X,
-        "y": START_Y,
+        "zone": DEFAULT_ZONE,
+        "x": start_x,
+        "y": start_y,
     }
     state.update(derived)
     state["inventory"] = list(state.get("inventory", []))
@@ -1346,6 +1878,7 @@ def build_player_state(user_record, sid):
     state["spells"] = get_spells_for_class(state.get("char_class"))
     state["attack_roll_bonus_dice"] = []
     state["damage_bonus"] = 0
+    state["searched_rooms"] = set()
     apply_weapon_to_player_state(state, state.get("equipped_weapon"))
     recalculate_player_stats(state)
     return state
@@ -1393,7 +1926,8 @@ def equip_weapon_for_player(username, weapon_identifier):
     update_user_equipped_weapon(username, weapon_key)
     send_room_state(username)
 
-    room = room_name(player["x"], player["y"])
+    zone = player.get("zone", DEFAULT_ZONE)
+    room = room_name(zone, player["x"], player["y"])
     message = f"{username} equips {player['weapon']['name']}."
     socketio.emit("system_message", {"text": message}, room=room)
     return True, message
@@ -1405,8 +1939,9 @@ def send_room_state(username):
         return
     recalculate_player_stats(player)
     x, y = player["x"], player["y"]
-    room = get_room_info(x, y)
-    occupants = get_players_in_room(x, y)
+    zone = player.get("zone", DEFAULT_ZONE)
+    room = get_room_info(zone, x, y)
+    occupants = get_players_in_room(zone, x, y)
     weapon = player.get("weapon", {})
     inventory_payload = []
     for key in player.get("inventory", []):
@@ -1426,9 +1961,11 @@ def send_room_state(username):
         if not info:
             continue
         item_payload.append(info)
-    mobs_here = [format_mob_payload(mob) for mob in get_mobs_in_room(x, y)]
-    loot_here = format_loot_payload(get_loot_in_room(x, y))
+    mobs_here = [format_mob_payload(mob) for mob in get_mobs_in_room(zone, x, y)]
+    loot_here = format_loot_payload(get_loot_in_room(zone, x, y))
     payload = {
+        "zone": zone,
+        "world_name": get_world(zone)["name"],
         "x": x,
         "y": y,
         "room_name": room["name"],
@@ -1465,8 +2002,8 @@ def send_room_state(username):
     socketio.emit("room_state", payload, to=player["sid"])
 
 
-def broadcast_room_state(x, y):
-    for occupant in get_players_in_room(x, y):
+def broadcast_room_state(zone, x, y):
+    for occupant in get_players_in_room(zone, x, y):
         send_room_state(occupant)
 
 
@@ -1478,12 +2015,14 @@ def describe_adjacent_players(player):
         ("east", (1, 0)),
     ]
     lines = []
+    zone = player.get("zone", DEFAULT_ZONE)
+    width, height = get_world_dimensions(zone)
     for label, (dx, dy) in directions:
         nx, ny = player["x"] + dx, player["y"] + dy
-        if not (0 <= nx < WORLD_WIDTH and 0 <= ny < WORLD_HEIGHT):
+        if not (0 <= nx < width and 0 <= ny < height):
             continue
-        occupants = get_players_in_room(nx, ny)
-        room = get_room_info(nx, ny)
+        occupants = get_players_in_room(zone, nx, ny)
+        room = get_room_info(zone, nx, ny)
         if occupants:
             lines.append(f"{label.title()} ({room['name']}): {', '.join(occupants)}")
         else:
@@ -1568,8 +2107,11 @@ def cast_spell_for_player(username, spell_identifier, target_identifier=None):
             return False, f"{target_name} is not present."
         if target_requirement == "enemy" and target_name == username:
             return False, "You cannot target yourself with that."
-        if target_requirement != "none" and (player["x"], player["y"]) != (target_player["x"], target_player["y"]):
-            return False, f"{target_name} is not in the same room."
+        if target_requirement != "none":
+            if player.get("zone", DEFAULT_ZONE) != target_player.get("zone", DEFAULT_ZONE):
+                return False, f"{target_name} is not in the same room."
+            if (player["x"], player["y"]) != (target_player["x"], target_player["y"]):
+                return False, f"{target_name} is not in the same room."
         recalculate_player_stats(target_player)
 
     success, feedback = execute_spell(username, player, spell_key, spell, target_player, target_name)
@@ -1589,7 +2131,8 @@ def cast_spell_for_player(username, spell_identifier, target_identifier=None):
 
 
 def execute_spell(caster_name, caster, spell_key, spell, target_player, target_name):
-    room = room_name(caster["x"], caster["y"])
+    zone = caster.get("zone", DEFAULT_ZONE)
+    room = room_name(zone, caster["x"], caster["y"])
     ability_mod = caster.get("ability_mods", {}).get(spell.get("ability"), 0)
     spell_type = spell.get("type")
 
@@ -1690,7 +2233,8 @@ def respawn_player(username):
     if not player:
         return
 
-    old_room = room_name(player["x"], player["y"])
+    zone = player.get("zone", DEFAULT_ZONE)
+    old_room = room_name(zone, player["x"], player["y"])
     disengage_player_from_room_mobs(username, player["x"], player["y"])
     leave_room(old_room, sid=player["sid"])
     socketio.emit(
@@ -1699,13 +2243,15 @@ def respawn_player(username):
         room=old_room,
     )
 
-    player["x"], player["y"] = START_X, START_Y
+    player["zone"] = DEFAULT_ZONE
+    start_x, start_y = get_world_start(DEFAULT_ZONE)
+    player["x"], player["y"] = start_x, start_y
     player["hp"] = player["max_hp"]
     update_user_current_hp(username, player["hp"])
     player["active_effects"] = []
     recalculate_player_stats(player)
 
-    new_room = room_name(player["x"], player["y"])
+    new_room = room_name(player["zone"], player["x"], player["y"])
     join_room(new_room, sid=player["sid"])
     socketio.emit(
         "system_message",
@@ -1713,7 +2259,7 @@ def respawn_player(username):
         room=new_room,
         include_self=False,
     )
-    notify_player(username, "You have been defeated and respawn at the crossroads.")
+    notify_player(username, "You have been defeated and return to the village square.")
     send_room_state(username)
     trigger_aggressive_mobs_for_player(username, player["x"], player["y"])
 
@@ -1739,6 +2285,11 @@ def handle_command(username, command_text):
         weapon_name = " ".join(parts[1:])
         success, message = equip_weapon_for_player(username, weapon_name)
         if not success:
+            notify_player(username, message)
+        return True
+    if cmd in ("search", "investigate"):
+        success, message = perform_search_action(username)
+        if not success and message:
             notify_player(username, message)
         return True
     if cmd == "cast":
@@ -1847,13 +2398,34 @@ def award_xp(username, amount):
         update_user_xp(username, new_total)
 
 
+def collect_item_for_player(player, username, item_key):
+    if not item_key:
+        return None
+    if item_key in GENERAL_ITEMS:
+        items = player.setdefault("items", [])
+        items.append(item_key)
+        update_user_items(username, items)
+        return GENERAL_ITEMS[item_key]["name"]
+    if item_key in WEAPONS:
+        inventory = player.setdefault("inventory", [])
+        if item_key not in inventory:
+            inventory.append(item_key)
+            update_user_weapon_inventory(username, inventory)
+        return WEAPONS[item_key]["name"]
+    items = player.setdefault("items", [])
+    items.append(item_key)
+    update_user_items(username, items)
+    return item_key.replace("_", " ").title()
+
+
 def handle_mob_defeat(mob, killer_name=None):
     if not mob or not mob.get("alive"):
         return
     mob["alive"] = False
     stop_mob_combat(mob)
     x, y = mob["x"], mob["y"]
-    room = room_name(x, y)
+    zone = mob.get("zone", DEFAULT_ZONE)
+    room = room_name(zone, x, y)
     socketio.emit(
         "system_message",
         {"text": f"{mob['name']} is slain!"},
@@ -1871,7 +2443,7 @@ def handle_mob_defeat(mob, killer_name=None):
         gold_amount = random.randint(gold_min, gold_max)
         if gold_amount > 0:
             gold_entry = generate_loot_entry_gold(gold_amount)
-            add_loot_to_room(x, y, gold_entry)
+            add_loot_to_room(zone, x, y, gold_entry)
             drops.append(gold_entry)
     for entry in mob.get("loot", []):
         if isinstance(entry, (list, tuple)) and entry:
@@ -1882,7 +2454,7 @@ def handle_mob_defeat(mob, killer_name=None):
             chance = 1.0
         if random.random() <= chance:
             loot_entry = generate_loot_entry_item(item_key)
-            add_loot_to_room(x, y, loot_entry)
+            add_loot_to_room(zone, x, y, loot_entry)
             drops.append(loot_entry)
     if drops:
         names = ", ".join(drop["name"] for drop in drops)
@@ -1892,7 +2464,7 @@ def handle_mob_defeat(mob, killer_name=None):
             room=room,
         )
     mobs.pop(mob["id"], None)
-    broadcast_room_state(x, y)
+    broadcast_room_state(zone, x, y)
 
 
 def resolve_attack_against_mob(attacker_name, attacker, mob):
@@ -1909,7 +2481,8 @@ def resolve_attack_against_mob(attacker_name, attacker, mob):
         label = bonus.get("label") or format_dice(bonus.get("dice"))
         bonus_rolls.append((label, extra))
     total_attack = roll + attack_bonus + bonus_total
-    room = room_name(attacker["x"], attacker["y"])
+    zone = attacker.get("zone", DEFAULT_ZONE)
+    room = room_name(zone, attacker["x"], attacker["y"])
     if not attack_roll_success(roll, total_attack, mob["ac"]):
         bonus_text = "".join(f" + {label} {value}" for label, value in bonus_rolls)
         socketio.emit(
@@ -1951,7 +2524,8 @@ def pickup_loot(username, loot_identifier):
         return False, "Specify which loot to take."
     loot_identifier = loot_identifier.strip().lower()
     x, y = player["x"], player["y"]
-    entries = room_loot.get((x, y), [])
+    zone = player.get("zone", DEFAULT_ZONE)
+    entries = room_loot.get((zone, x, y), [])
     match = None
     for entry in entries:
         if entry["id"].lower() == loot_identifier:
@@ -1959,10 +2533,10 @@ def pickup_loot(username, loot_identifier):
             break
     if not match:
         return False, "No such loot lies here."
-    room_loot[(x, y)].remove(match)
-    if not room_loot[(x, y)]:
-        room_loot.pop((x, y), None)
-    room = room_name(x, y)
+    room_loot[(zone, x, y)].remove(match)
+    if not room_loot[(zone, x, y)]:
+        room_loot.pop((zone, x, y), None)
+    room = room_name(zone, x, y)
     if match.get("type") == "gold":
         amount = int(match.get("amount") or 0)
         player["gold"] = player.get("gold", 0) + amount
@@ -1990,8 +2564,64 @@ def pickup_loot(username, loot_identifier):
             item_name = match.get("name", "an item")
             message = f"{username} picks up {item_name}."
     socketio.emit("system_message", {"text": message}, room=room)
-    broadcast_room_state(x, y)
+    broadcast_room_state(zone, x, y)
     return True, message
+
+
+def perform_search_action(username):
+    player = players.get(username)
+    if not player:
+        return False, "You are not in the game."
+    if not check_player_action_gate(username):
+        return False, None
+
+    zone = player.get("zone", DEFAULT_ZONE)
+    x, y = player["x"], player["y"]
+    room = get_room_info(zone, x, y)
+    search_meta = room.get("search")
+
+    mark_player_action(player)
+    searched_rooms = player.setdefault("searched_rooms", set())
+    location_key = (zone, x, y)
+
+    if not search_meta:
+        notify_player(username, "You search around but find nothing unusual.")
+        return True, None
+
+    ability_key = (search_meta.get("ability") or "wis").lower()
+    ability_mod = player.get("ability_mods", {}).get(ability_key, 0)
+    try:
+        dc = int(search_meta.get("dc", 10))
+    except (TypeError, ValueError):
+        dc = 10
+    roll = random.randint(1, 20)
+    total = roll + ability_mod
+    detail = f" (Roll {total} vs DC {dc})"
+
+    if total >= dc:
+        success_text = search_meta.get("success_text") or "You uncover something hidden."
+        notify_player(username, success_text + detail)
+        already_cleared = location_key in searched_rooms
+        if already_cleared:
+            loot_keys = search_meta.get("loot") or []
+            if loot_keys:
+                notify_player(username, "You have already recovered the valuables hidden here.")
+            return True, None
+        searched_rooms.add(location_key)
+        loot_keys = search_meta.get("loot") or []
+        if loot_keys:
+            awarded = []
+            for item_key in loot_keys:
+                item_name = collect_item_for_player(player, username, item_key)
+                if item_name:
+                    awarded.append(item_name)
+            if awarded:
+                notify_player(username, "You obtain " + ", ".join(awarded) + ".")
+        return True, None
+
+    failure_text = search_meta.get("failure_text") or "You search around but find nothing unusual."
+    notify_player(username, failure_text + detail)
+    return True, None
 
 
 def resolve_attack(attacker_name, target_name):
@@ -2010,8 +2640,9 @@ def resolve_attack(attacker_name, target_name):
         return
 
     target = players.get(target_name)
+    attacker_zone = attacker.get("zone", DEFAULT_ZONE)
     if not target:
-        mob = find_mob_in_room(target_name, attacker["x"], attacker["y"])
+        mob = find_mob_in_room(target_name, attacker_zone, attacker["x"], attacker["y"])
         if mob:
             mark_player_action(attacker)
             resolve_attack_against_mob(attacker_name, attacker, mob)
@@ -2019,7 +2650,7 @@ def resolve_attack(attacker_name, target_name):
         notify_player(attacker_name, f"{target_name} is nowhere to be found.")
         return
 
-    if attacker["x"] != target["x"] or attacker["y"] != target["y"]:
+    if attacker_zone != target.get("zone", DEFAULT_ZONE) or attacker["x"] != target["x"] or attacker["y"] != target["y"]:
         notify_player(attacker_name, f"{target_name} is not in the same room.")
         return
 
@@ -2039,7 +2670,7 @@ def resolve_attack(attacker_name, target_name):
         bonus_rolls.append((label, extra))
     total_attack = roll + attack_bonus + bonus_total
     target_ac = target["ac"]
-    room = room_name(attacker["x"], attacker["y"])
+    room = room_name(attacker_zone, attacker["x"], attacker["y"])
 
     if not attack_roll_success(roll, total_attack, target_ac):
         bonus_text = "".join(f" + {label} {value}" for label, value in bonus_rolls)
@@ -2174,23 +2805,28 @@ def on_join_game():
         players[username] = build_player_state(user_record, request.sid)
     else:
         existing = players[username]
-        preserved_position = (existing.get("x", START_X), existing.get("y", START_Y))
+        preserved_zone = existing.get("zone", DEFAULT_ZONE)
+        start_x, start_y = get_world_start(preserved_zone)
+        preserved_position = (existing.get("x", start_x), existing.get("y", start_y))
         preserved_hp = clamp_hp(existing.get("hp"), existing.get("max_hp", 1))
         preserved_effects = list(existing.get("active_effects", []))
         preserved_cooldowns = dict(existing.get("cooldowns", {}))
 
         state = build_player_state(user_record, request.sid)
+        state["zone"] = preserved_zone
         state["x"], state["y"] = preserved_position
         state["hp"] = preserved_hp
         state["active_effects"] = preserved_effects
         state["cooldowns"] = preserved_cooldowns
         state["last_action_ts"] = existing.get("last_action_ts", 0)
+        state["searched_rooms"] = set(existing.get("searched_rooms", set()))
         recalculate_player_stats(state)
         players[username] = state
 
     x = players[username]["x"]
     y = players[username]["y"]
-    rname = room_name(x, y)
+    zone = players[username].get("zone", DEFAULT_ZONE)
+    rname = room_name(zone, x, y)
 
     join_room(rname)
 
@@ -2200,6 +2836,58 @@ def on_join_game():
     # Send room state to this player
     send_room_state(username)
     trigger_aggressive_mobs_for_player(username, x, y)
+
+
+def handle_travel_portal(username):
+    player = players.get(username)
+    if not player:
+        return False
+    zone = player.get("zone", DEFAULT_ZONE)
+    x, y = player["x"], player["y"]
+    room = get_room_info(zone, x, y)
+    travel = room.get("travel_to")
+    if not travel:
+        return False
+    target_zone = travel.get("zone")
+    if not target_zone or target_zone not in WORLDS:
+        return False
+    target_world = get_world(target_zone)
+    destination = travel.get("start")
+    if isinstance(destination, (list, tuple)) and len(destination) == 2:
+        tx, ty = destination
+    else:
+        tx, ty = target_world["start"]
+    width, height = target_world["width"], target_world["height"]
+    if not (0 <= tx < width and 0 <= ty < height):
+        tx, ty = target_world["start"]
+
+    origin_zone = zone
+    source_room = room_name(origin_zone, x, y)
+    leave_room(source_room)
+    socketio.emit(
+        "system_message",
+        {"text": f"{username} vanishes into the passage."},
+        room=source_room,
+    )
+    broadcast_room_state(origin_zone, x, y)
+
+    player["zone"] = target_zone
+    player["x"], player["y"] = tx, ty
+    destination_room = room_name(target_zone, tx, ty)
+    join_room(destination_room)
+    socketio.emit(
+        "system_message",
+        {"text": f"{username} arrives in a shimmer of light."},
+        room=destination_room,
+        include_self=False,
+    )
+    world_name = target_world.get("name", target_zone.title())
+    dest_info = get_room_info(target_zone, tx, ty)
+    notify_player(username, f"You travel to {world_name}: {dest_info['name']}.")
+    send_room_state(username)
+    trigger_aggressive_mobs_for_player(username, tx, ty)
+    broadcast_room_state(target_zone, tx, ty)
+    return True
 
 
 @socketio.on("move")
@@ -2213,6 +2901,8 @@ def on_move(data):
     direction = data.get("direction")
     player = players[username]
     old_x, old_y = player["x"], player["y"]
+    zone = player.get("zone", DEFAULT_ZONE)
+    width, height = get_world_dimensions(zone)
     new_x, new_y = old_x, old_y
 
     if direction == "north":
@@ -2225,12 +2915,12 @@ def on_move(data):
         new_x += 1
 
     # Bounds check
-    if not (0 <= new_x < WORLD_WIDTH and 0 <= new_y < WORLD_HEIGHT):
+    if not (0 <= new_x < width and 0 <= new_y < height):
         emit("system_message", {"text": "You cannot go that way."})
         return
 
-    old_room = room_name(old_x, old_y)
-    new_room = room_name(new_x, new_y)
+    old_room = room_name(zone, old_x, old_y)
+    new_room = room_name(zone, new_x, new_y)
 
     if (new_x, new_y) == (old_x, old_y):
         # no move
@@ -2250,8 +2940,10 @@ def on_move(data):
 
     # Send new room state to moving player
     mark_player_action(player)
+    if handle_travel_portal(username):
+        return
     send_room_state(username)
-    trigger_aggressive_mobs_for_player(username, new_x, new_y)
+    trigger_aggressive_mobs_for_player(username, player["x"], player["y"])
 
 
 @socketio.on("equip_weapon")
@@ -2290,6 +2982,16 @@ def on_pickup_loot(data):
         notify_player(username, message)
 
 
+@socketio.on("search")
+def on_search_event(data):
+    username = session.get("username")
+    if not username or username not in players:
+        return
+    success, message = perform_search_action(username)
+    if not success and message:
+        notify_player(username, message)
+
+
 @socketio.on("chat")
 def on_chat(data):
     username = session.get("username")
@@ -2305,8 +3007,10 @@ def on_chat(data):
         if handled:
             return
 
-    x, y = players[username]["x"], players[username]["y"]
-    rname = room_name(x, y)
+    player = players[username]
+    x, y = player["x"], player["y"]
+    zone = player.get("zone", DEFAULT_ZONE)
+    rname = room_name(zone, x, y)
 
     emit("chat_message", {"from": username, "text": text}, room=rname)
 
@@ -2321,11 +3025,18 @@ def on_disconnect():
             break
 
     if username:
-        x, y = players[username]["x"], players[username]["y"]
-        rname = room_name(x, y)
+        player = players.get(username)
+        if player:
+            x, y = player["x"], player["y"]
+            zone = player.get("zone", DEFAULT_ZONE)
+            rname = room_name(zone, x, y)
+        else:
+            rname = None
+            x = y = 0
         disengage_player_from_room_mobs(username, x, y)
         # Notify others
-        emit("system_message", {"text": f"{username} has disconnected."}, room=rname)
+        if rname:
+            emit("system_message", {"text": f"{username} has disconnected."}, room=rname)
         update_user_current_hp(username, players[username]["hp"])
         # Remove from players (MVP: no persistent positions)
         players.pop(username, None)
