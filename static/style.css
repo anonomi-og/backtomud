@@ -131,6 +131,69 @@ header {
   color: #9cf;
 }
 
+.spell-panel,
+.effects-panel {
+  margin-top: 0.6rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid #333;
+}
+
+.spell-panel form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.spell-panel select,
+.spell-panel input {
+  flex: 1;
+  min-width: 0;
+  background: #111;
+  color: #eee;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+}
+
+.spell-panel input:disabled {
+  opacity: 0.6;
+}
+
+.spell-panel button {
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background: #333;
+  color: #eee;
+  cursor: pointer;
+}
+
+.spell-panel button:hover {
+  background: #444;
+}
+
+.spell-panel ul,
+.effects-panel ul {
+  list-style: none;
+  padding-left: 1rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.spell-panel li {
+  margin-bottom: 0.2rem;
+}
+
+.spell-panel li.on-cooldown {
+  color: #aaa;
+  font-style: italic;
+}
+
+.effects-panel li {
+  margin-bottom: 0.2rem;
+}
+
 .ability-table {
   width: 100%;
   border-collapse: collapse;

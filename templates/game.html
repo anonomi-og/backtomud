@@ -54,10 +54,23 @@
             </form>
             <ul id="weapon-list"></ul>
           </div>
+          <div class="spell-panel">
+            <h4>Spells &amp; Abilities</h4>
+            <form id="cast-form">
+              <select id="spell-select"></select>
+              <input type="text" id="spell-target" placeholder="Target (optional)">
+              <button type="submit">Cast</button>
+            </form>
+            <ul id="spell-list"></ul>
+          </div>
+          <div class="effects-panel">
+            <h4>Active Effects</h4>
+            <ul id="effects-list"></ul>
+          </div>
         </div>
         <p class="combat-tip">
-          Use the panel or <code>/equip &lt;weapon&gt;</code> to ready gear, then issue <code>/attack &lt;player&gt;</code> or
-          <code>/fight &lt;player&gt;</code> to clash in your room.
+          Ready your gear with the panel or <code>/equip &lt;weapon&gt;</code>, then strike with <code>/attack &lt;player&gt;</code>.
+          Invoke <code>/cast &lt;spell&gt; [target]</code> or use the spell panel, and list your toolkit any time with <code>/spells</code>.
         </p>
       </section>
 
@@ -65,7 +78,7 @@
         <h2>Room chat</h2>
         <div id="messages"></div>
         <form id="chat-form">
-          <input type="text" id="chat-input" placeholder="Say something or /attack|/fight &lt;name&gt;..." autocomplete="off">
+          <input type="text" id="chat-input" placeholder="Say something or /attack &lt;name&gt;, /cast &lt;spell&gt;..." autocomplete="off">
           <button type="submit">Send</button>
         </form>
       </section>
