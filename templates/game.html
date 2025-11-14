@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+  <head>
+    <title>MUD MVP - Game</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  </head>
+  <body class="game-body">
+    <header>
+      <div>Logged in as: <strong>{{ username }}</strong></div>
+      <div><a href="{{ url_for('logout') }}">Logout</a></div>
+    </header>
+
+    <main class="game-layout">
+      <section class="room-panel">
+        <h2 id="room-name">Loading...</h2>
+        <p id="room-desc"></p>
+        <p id="coords"></p>
+
+        <h3>Players here</h3>
+        <ul id="players-list"></ul>
+
+        <h3>Move</h3>
+        <div class="movement">
+          <button data-dir="north">North</button><br>
+          <button data-dir="west">West</button>
+          <button data-dir="east">East</button><br>
+          <button data-dir="south">South</button>
+        </div>
+      </section>
+
+      <section class="chat-panel">
+        <h2>Room chat</h2>
+        <div id="messages"></div>
+        <form id="chat-form">
+          <input type="text" id="chat-input" placeholder="Say something..." autocomplete="off">
+          <button type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      const USERNAME = "{{ username }}";
+    </script>
+    <script src="{{ url_for('static', filename='game.js') }}"></script>
+  </body>
+</html>

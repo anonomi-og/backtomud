@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+  <head>
+    <title>MUD MVP - Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body class="login-body">
+    <div class="login-box">
+      <h1>MUD MVP</h1>
+
+      {% with messages = get_flashed_messages() %}
+        {% if messages %}
+          <ul class="flash">
+            {% for msg in messages %}
+              <li>{{ msg }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endwith %}
+
+      <form method="post">
+        <label>Username</label>
+        <input type="text" name="username" required>
+
+        <label>Password</label>
+        <input type="password" name="password" required>
+
+        <div class="buttons">
+          <button type="submit" name="action" value="login">Login</button>
+          <button type="submit" name="action" value="register">Register</button>
+        </div>
+      </form>
+    </div>
+  </body>
+</html>
