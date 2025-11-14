@@ -27,13 +27,36 @@
           <button data-dir="east">East</button><br>
           <button data-dir="south">South</button>
         </div>
+
+        <h3>Your character</h3>
+        <div class="character-card">
+          <p><strong>Identity:</strong> <span id="char-summary">--</span></p>
+          <p><strong>HP:</strong> <span id="stat-hp">--</span></p>
+          <p><strong>Armor Class:</strong> <span id="stat-ac">--</span></p>
+          <p><strong>Proficiency:</strong> <span id="stat-prof">--</span></p>
+          <p><strong>Weapon:</strong> <span id="stat-weapon">--</span></p>
+          <p><strong>Attack Bonus:</strong> <span id="stat-atk">--</span></p>
+          <table class="ability-table">
+            <thead>
+              <tr>
+                <th>Ability</th>
+                <th>Score</th>
+                <th>Mod</th>
+              </tr>
+            </thead>
+            <tbody id="ability-table-body"></tbody>
+          </table>
+        </div>
+        <p class="combat-tip">
+          Issue <code>/attack &lt;player&gt;</code> or <code>/fight &lt;player&gt;</code> in chat to roll SRD combat in your room.
+        </p>
       </section>
 
       <section class="chat-panel">
         <h2>Room chat</h2>
         <div id="messages"></div>
         <form id="chat-form">
-          <input type="text" id="chat-input" placeholder="Say something..." autocomplete="off">
+          <input type="text" id="chat-input" placeholder="Say something or /attack|/fight &lt;name&gt;..." autocomplete="off">
           <button type="submit">Send</button>
         </form>
       </section>

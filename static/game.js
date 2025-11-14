@@ -8,6 +8,23 @@ const messagesEl = document.getElementById("messages");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
 const moveButtons = document.querySelectorAll(".movement button");
+const hpEl = document.getElementById("stat-hp");
+const attackBonusEl = document.getElementById("stat-atk");
+const acEl = document.getElementById("stat-ac");
+const profEl = document.getElementById("stat-prof");
+const weaponEl = document.getElementById("stat-weapon");
+const charSummaryEl = document.getElementById("char-summary");
+const abilityTableBody = document.getElementById("ability-table-body");
+
+const ABILITY_ORDER = ["str", "dex", "con", "int", "wis", "cha"];
+const ABILITY_LABELS = {
+  str: "STR",
+  dex: "DEX",
+  con: "CON",
+  int: "INT",
+  wis: "WIS",
+  cha: "CHA",
+};
 
 function addMessage(text, cssClass) {
   const div = document.createElement("div");
@@ -41,6 +58,10 @@ socket.on("room_state", (data) => {
     if (name === USERNAME) li.classList.add("you");
     playersListEl.appendChild(li);
   });
+
+  if (data.character) {
+    renderCharacterPanel(data.character);
+  }
 });
 
 socket.on("system_message", (data) => {
@@ -76,3 +97,58 @@ chatForm.addEventListener("submit", (evt) => {
   socket.emit("chat", { text });
   chatInput.value = "";
 });
+
+function renderCharacterPanel(character) {
+  if (charSummaryEl) {
+    const identity = [character.race, character.char_class].filter(Boolean).join(" ");
+    const levelLabel = character.level ? ` (Level ${character.level})` : "";
+    charSummaryEl.textContent = `${identity || "Unknown"}${levelLabel}`;
+  }
+  if (hpEl && typeof character.hp !== "undefined" && typeof character.max_hp !== "undefined") {
+    hpEl.textContent = `${character.hp} / ${character.max_hp}`;
+  }
+  if (acEl && typeof character.ac !== "undefined") {
+    acEl.textContent = character.ac;
+  }
+  if (profEl && typeof character.proficiency !== "undefined") {
+    profEl.textContent = formatBonus(character.proficiency);
+  }
+  if (weaponEl && character.weapon) {
+    const weapon = character.weapon;
+    const damageType = weapon.damage_type ? ` ${weapon.damage_type}` : "";
+    weaponEl.textContent = `${weapon.name} (${weapon.dice}${damageType})`;
+  }
+  if (attackBonusEl && typeof character.attack_bonus !== "undefined") {
+    const abilityTag = character.attack_ability ? character.attack_ability.toUpperCase() : "";
+    attackBonusEl.textContent = `${formatBonus(character.attack_bonus)}${abilityTag ? ` via ${abilityTag}` : ""}`;
+  }
+  renderAbilityTable(character.abilities, character.ability_mods);
+}
+
+function renderAbilityTable(scores = {}, modifiers = {}) {
+  if (!abilityTableBody) return;
+  abilityTableBody.innerHTML = "";
+  ABILITY_ORDER.forEach((ability) => {
+    const score = scores[ability];
+    const mod = modifiers[ability];
+    const tr = document.createElement("tr");
+    const labelCell = document.createElement("td");
+    labelCell.textContent = ABILITY_LABELS[ability];
+
+    const scoreCell = document.createElement("td");
+    scoreCell.textContent = typeof score === "number" ? score : "--";
+
+    const modCell = document.createElement("td");
+    modCell.textContent = typeof mod === "number" ? formatBonus(mod) : "--";
+
+    tr.appendChild(labelCell);
+    tr.appendChild(scoreCell);
+    tr.appendChild(modCell);
+    abilityTableBody.appendChild(tr);
+  });
+}
+
+function formatBonus(value) {
+  if (typeof value !== "number") return "--";
+  return value >= 0 ? `+${value}` : `${value}`;
+}

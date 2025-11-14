@@ -25,6 +25,21 @@
         <label>Password</label>
         <input type="password" name="password" required>
 
+        <label>Race (used when registering)</label>
+        <select name="race">
+          {% for race in race_options %}
+            <option value="{{ race }}">{{ race }}</option>
+          {% endfor %}
+        </select>
+
+        <label>Class (used when registering)</label>
+        <select name="char_class">
+          {% for cls in class_options %}
+            <option value="{{ cls }}">{{ cls }}</option>
+          {% endfor %}
+        </select>
+        <div class="help-text">Race/class only matter for new accounts.</div>
+
         <div class="buttons">
           <button type="submit" name="action" value="login">Login</button>
           <button type="submit" name="action" value="register">Register</button>
