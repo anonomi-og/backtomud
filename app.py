@@ -67,6 +67,11 @@ DEFAULT_CLASS = "Fighter"
 DEFAULT_WEAPON_KEY = "unarmed"
 PROFICIENCY_BONUS = 2  # SRD level 1 characters
 
+# --- Global action timing ---
+BASE_ACTION_COOLDOWN = 1.0  # baseline delay between rate-limited actions
+MIN_ACTION_MULTIPLIER = 0.75
+MAX_ACTION_MULTIPLIER = 1.25
+
 WEAPONS = {
     "unarmed": {"name": "Unarmed Strike", "dice": (1, 1), "ability": "str", "damage_type": "bludgeoning"},
     "longsword": {"name": "Longsword", "dice": (1, 8), "ability": "str", "damage_type": "slashing"},
@@ -109,6 +114,9 @@ MOB_TEMPLATES = {
         "abilities": {"str": 7, "dex": 15, "con": 11, "int": 2, "wis": 10, "cha": 4},
         "attack_bonus": 4,
         "damage": {"dice": (1, 4), "bonus": 2, "type": "piercing"},
+        "attack_interval": 2.5,
+        "initiative": 12,
+        "behaviour_type": "aggressive",
         "xp": 25,
         "initial_spawns": 2,
         "gold_range": (1, 6),
@@ -124,6 +132,9 @@ MOB_TEMPLATES = {
         "abilities": {"str": 8, "dex": 14, "con": 10, "int": 10, "wis": 8, "cha": 8},
         "attack_bonus": 4,
         "damage": {"dice": (1, 6), "bonus": 2, "type": "slashing"},
+        "attack_interval": 3.0,
+        "initiative": 11,
+        "behaviour_type": "defensive",
         "xp": 50,
         "initial_spawns": 2,
         "gold_range": (2, 12),
@@ -139,6 +150,9 @@ MOB_TEMPLATES = {
         "abilities": {"str": 7, "dex": 15, "con": 9, "int": 8, "wis": 7, "cha": 8},
         "attack_bonus": 4,
         "damage": {"dice": (1, 4), "bonus": 2, "type": "piercing"},
+        "attack_interval": 2.8,
+        "initiative": 13,
+        "behaviour_type": "aggressive",
         "xp": 25,
         "initial_spawns": 2,
         "gold_range": (1, 8),
@@ -798,6 +812,61 @@ def update_user_items(username, items):
 #     "equipped_weapon": str,
 # }
 players = {}
+
+
+def compute_action_multiplier(initiative):
+    """Convert initiative into a small speed boost/penalty."""
+    try:
+        value = float(initiative)
+    except (TypeError, ValueError):
+        value = 10.0
+    # Clamp initiative influence to keep multipliers within the desired range.
+    delta = max(-5.0, min(5.0, value - 10.0))
+    # Each 5 points away from 10 shifts the multiplier by ~0.25.
+    adjustment = (delta / 5.0) * 0.25
+    multiplier = 1.0 + adjustment
+    return max(MIN_ACTION_MULTIPLIER, min(MAX_ACTION_MULTIPLIER, multiplier))
+
+
+def update_player_action_timing(player):
+    """Refresh derived initiative and cooldown values for the player."""
+    base_initiative = player.get("base_initiative", 10)
+    dex_bonus = player.get("ability_mods", {}).get("dex", 0)
+    total_initiative = max(1.0, base_initiative + dex_bonus)
+    multiplier = compute_action_multiplier(total_initiative)
+    player["initiative"] = total_initiative
+    player["action_cooldown"] = BASE_ACTION_COOLDOWN / multiplier
+    player.setdefault("last_action_ts", 0)
+
+
+def get_player_action_cooldown_remaining(player):
+    cooldown = player.get("action_cooldown", BASE_ACTION_COOLDOWN)
+    last_ts = player.get("last_action_ts", 0)
+    remaining = cooldown - (time.time() - last_ts)
+    return max(0.0, remaining)
+
+
+def send_action_denied(username, player, remaining):
+    payload = {"reason": "cooldown", "remaining": round(remaining, 2)}
+    socketio.emit("action_denied", payload, to=player["sid"])
+    notify_player(username, f"You must wait {remaining:.1f}s before acting again.")
+
+
+def check_player_action_gate(username):
+    """Server-side guard that enforces the global action cooldown per player."""
+    player = players.get(username)
+    if not player:
+        return False
+    recalculate_player_stats(player)
+    remaining = get_player_action_cooldown_remaining(player)
+    if remaining > 0:
+        send_action_denied(username, player, remaining)
+        return False
+    return True
+
+
+def mark_player_action(player):
+    player["last_action_ts"] = time.time()
 mobs = {}
 room_loot = {}
 _mob_counter = 0
@@ -885,6 +954,10 @@ def spawn_mob(template_key, x=None, y=None):
         "ac": template.get("ac", 10),
         "hp": hp,
         "max_hp": hp,
+        "attack_interval": template.get("attack_interval", 3.0),
+        "last_attack_ts": 0,
+        "initiative": template.get("initiative", 10),
+        "behaviour_type": template.get("behaviour_type", "defensive"),
         "xp": template.get("xp", 0),
         "description": template.get("description", ""),
         "abilities": template.get("abilities", {}),
@@ -892,6 +965,9 @@ def spawn_mob(template_key, x=None, y=None):
         "loot": list(template.get("loot", [])),
         "contributions": {},
         "alive": True,
+        "in_combat": False,
+        "combat_targets": set(),
+        "combat_task": None,
     }
     mobs[mob_id] = mob
     return mob
@@ -920,6 +996,7 @@ def format_mob_payload(mob):
         "ac": mob["ac"],
         "xp": mob.get("xp", 0),
         "description": mob.get("description", ""),
+        "behaviour": mob.get("behaviour_type", "defensive"),
     }
 
 
@@ -931,6 +1008,127 @@ def find_mob_in_room(identifier, x, y):
         if mob["id"].lower() == lookup or mob["name"].lower() == lookup:
             return mob
     return None
+
+
+def stop_mob_combat(mob):
+    mob["in_combat"] = False
+    mob["combat_targets"] = set()
+
+
+def mob_combat_loop(mob_id):
+    """Background loop that lets mobs retaliate on their own timer."""
+    while True:
+        socketio.sleep(0.25)
+        mob = mobs.get(mob_id)
+        if not mob or not mob.get("alive"):
+            break
+        if not mob.get("in_combat"):
+            break
+
+        targets = mob.setdefault("combat_targets", set())
+        engaged = []
+        for username in list(targets):
+            player = players.get(username)
+            if not player or player["hp"] <= 0:
+                targets.discard(username)
+                continue
+            if (player["x"], player["y"]) != (mob["x"], mob["y"]):
+                targets.discard(username)
+                continue
+            engaged.append((username, player))
+
+        if not engaged:
+            stop_mob_combat(mob)
+            break
+
+        now = time.time()
+        interval = mob.get("attack_interval", 3.0)
+        if now - mob.get("last_attack_ts", 0) < interval:
+            continue
+
+        username, target = random.choice(engaged)
+        damage_info = mob.get("damage", {})
+        damage = roll_dice(damage_info.get("dice")) + damage_info.get("bonus", 0)
+        damage = max(1, damage)
+        mob["last_attack_ts"] = now
+
+        target["hp"] = clamp_hp(target["hp"] - damage, target["max_hp"])
+        update_user_current_hp(username, target["hp"])
+        room = room_name(mob["x"], mob["y"])
+        dmg_type = damage_info.get("type")
+        suffix = f" {dmg_type} damage" if dmg_type else " damage"
+        socketio.emit(
+            "system_message",
+            {"text": f"{mob['name']} strikes {username} for {damage}{suffix}!"},
+            room=room,
+        )
+        send_room_state(username)
+        broadcast_room_state(mob["x"], mob["y"])
+
+        if target["hp"] == 0:
+            socketio.emit(
+                "system_message",
+                {"text": f"{username} is felled by {mob['name']}!"},
+                room=room,
+            )
+            targets.discard(username)
+            respawn_player(username)
+
+    mob = mobs.get(mob_id)
+    if mob:
+        mob["combat_task"] = None
+
+
+def engage_mob_with_player(mob, username, auto=False):
+    """Ensure the mob is locked in combat with a player, starting timers if needed."""
+    if not mob or not mob.get("alive"):
+        return
+    player = players.get(username)
+    if not player or player["hp"] <= 0:
+        return
+    if (player["x"], player["y"]) != (mob["x"], mob["y"]):
+        return
+
+    targets = mob.setdefault("combat_targets", set())
+    if username not in targets:
+        targets.add(username)
+        room = room_name(mob["x"], mob["y"])
+        if auto:
+            socketio.emit(
+                "system_message",
+                {"text": f"{mob['name']} lunges at {username}!"},
+                room=room,
+            )
+        else:
+            socketio.emit(
+                "system_message",
+                {"text": f"{mob['name']} turns to fight {username}!"},
+                room=room,
+            )
+
+    if not mob.get("in_combat"):
+        mob["in_combat"] = True
+        mob["last_attack_ts"] = time.time()
+        if not mob.get("combat_task"):
+            mob["combat_task"] = socketio.start_background_task(mob_combat_loop, mob["id"])
+    elif not mob.get("combat_task"):
+        mob["combat_task"] = socketio.start_background_task(mob_combat_loop, mob["id"])
+
+
+def disengage_player_from_room_mobs(username, x, y):
+    for mob in get_mobs_in_room(x, y):
+        targets = mob.setdefault("combat_targets", set())
+        if username in targets:
+            targets.discard(username)
+            if not targets:
+                stop_mob_combat(mob)
+
+
+def trigger_aggressive_mobs_for_player(username, x, y):
+    """Aggressive mobs attack as soon as a fresh player enters their room."""
+    for mob in get_mobs_in_room(x, y):
+        if mob.get("behaviour_type") == "aggressive" and mob.get("alive"):
+            engage_mob_with_player(mob, username, auto=True)
 
 
 def get_loot_in_room(x, y):
@@ -1050,6 +1248,7 @@ def recalculate_player_stats(player):
     player["damage_bonus"] = damage_bonus
     player.setdefault("cooldowns", {})
     player.setdefault("active_effects", [])
+    update_player_action_timing(player)
 
 
 def apply_effect_to_player(target, effect_template):
@@ -1138,6 +1337,10 @@ def build_player_state(user_record, sid):
     state["hp"] = clamp_hp(user_record.get("current_hp"), derived["max_hp"])
     state["base_ability_mods"] = dict(state.get("ability_mods", {}))
     state["base_ac"] = state.get("ac", 10)
+    state["base_initiative"] = 10
+    state["initiative"] = 10
+    state["action_cooldown"] = BASE_ACTION_COOLDOWN
+    state["last_action_ts"] = 0
     state["active_effects"] = []
     state["cooldowns"] = {}
     state["spells"] = get_spells_for_class(state.get("char_class"))
@@ -1317,6 +1520,8 @@ def cast_spell_for_player(username, spell_identifier, target_identifier=None):
     player = players.get(username)
     if not player:
         return False, "You are not in the game."
+    if not check_player_action_gate(username):
+        return False, None
     if not spell_identifier:
         return False, "Choose a spell or ability to use."
 
@@ -1371,6 +1576,7 @@ def cast_spell_for_player(username, spell_identifier, target_identifier=None):
     if not success:
         return False, feedback
 
+    mark_player_action(player)
     cooldown = spell.get("cooldown", 0)
     if cooldown:
         player.setdefault("cooldowns", {})[spell_key] = time.time() + cooldown
@@ -1485,6 +1691,7 @@ def respawn_player(username):
         return
 
     old_room = room_name(player["x"], player["y"])
+    disengage_player_from_room_mobs(username, player["x"], player["y"])
     leave_room(old_room, sid=player["sid"])
     socketio.emit(
         "system_message",
@@ -1508,6 +1715,7 @@ def respawn_player(username):
     )
     notify_player(username, "You have been defeated and respawn at the crossroads.")
     send_room_state(username)
+    trigger_aggressive_mobs_for_player(username, player["x"], player["y"])
 
 
 def handle_command(username, command_text):
@@ -1643,6 +1851,7 @@ def handle_mob_defeat(mob, killer_name=None):
     if not mob or not mob.get("alive"):
         return
     mob["alive"] = False
+    stop_mob_combat(mob)
     x, y = mob["x"], mob["y"]
     room = room_name(x, y)
     socketio.emit(
@@ -1687,6 +1896,7 @@ def handle_mob_defeat(mob, killer_name=None):
 
 
 def resolve_attack_against_mob(attacker_name, attacker, mob):
+    engage_mob_with_player(mob, attacker_name)
     recalculate_player_stats(attacker)
     roll = random.randint(1, 20)
     crit = roll == 20
@@ -1788,6 +1998,8 @@ def resolve_attack(attacker_name, target_name):
     attacker = players.get(attacker_name)
     if not attacker:
         return
+    if not check_player_action_gate(attacker_name):
+        return
     if not target_name:
         notify_player(attacker_name, "Choose a target to attack.")
         return
@@ -1801,6 +2013,7 @@ def resolve_attack(attacker_name, target_name):
     if not target:
         mob = find_mob_in_room(target_name, attacker["x"], attacker["y"])
         if mob:
+            mark_player_action(attacker)
             resolve_attack_against_mob(attacker_name, attacker, mob)
             return
         notify_player(attacker_name, f"{target_name} is nowhere to be found.")
@@ -1812,6 +2025,7 @@ def resolve_attack(attacker_name, target_name):
 
     recalculate_player_stats(attacker)
     recalculate_player_stats(target)
+    mark_player_action(attacker)
 
     roll = random.randint(1, 20)
     crit = roll == 20
@@ -1970,6 +2184,7 @@ def on_join_game():
         state["hp"] = preserved_hp
         state["active_effects"] = preserved_effects
         state["cooldowns"] = preserved_cooldowns
+        state["last_action_ts"] = existing.get("last_action_ts", 0)
         recalculate_player_stats(state)
         players[username] = state
 
@@ -1984,12 +2199,15 @@ def on_join_game():
 
     # Send room state to this player
     send_room_state(username)
+    trigger_aggressive_mobs_for_player(username, x, y)
 
 
 @socketio.on("move")
 def on_move(data):
     username = session.get("username")
     if not username or username not in players:
+        return
+    if not check_player_action_gate(username):
         return
 
     direction = data.get("direction")
@@ -2019,6 +2237,7 @@ def on_move(data):
         return
 
     # Update player position
+    disengage_player_from_room_mobs(username, old_x, old_y)
     player["x"], player["y"] = new_x, new_y
 
     # Leave old room, notify others
@@ -2030,7 +2249,9 @@ def on_move(data):
     emit("system_message", {"text": f"{username} has entered the room."}, room=new_room, include_self=False)
 
     # Send new room state to moving player
+    mark_player_action(player)
     send_room_state(username)
+    trigger_aggressive_mobs_for_player(username, new_x, new_y)
 
 
 @socketio.on("equip_weapon")
@@ -2102,6 +2323,7 @@ def on_disconnect():
     if username:
         x, y = players[username]["x"], players[username]["y"]
         rname = room_name(x, y)
+        disengage_player_from_room_mobs(username, x, y)
         # Notify others
         emit("system_message", {"text": f"{username} has disconnected."}, room=rname)
         update_user_current_hp(username, players[username]["hp"])
