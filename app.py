@@ -1194,7 +1194,7 @@ def init_db():
                         str_score, dex_score, con_score, int_score, wis_score, cha_score,
                         hp, current_hp, equipped_weapon, weapon_inventory,
                         xp, gold, item_inventory, bio, description
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         account_id,
