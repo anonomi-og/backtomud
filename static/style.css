@@ -366,6 +366,84 @@ button:disabled {
   width: 100%;
 }
 
+.movement-grid button:disabled {
+  background: rgba(36, 23, 115, 0.18);
+  border: 1px solid rgba(61, 40, 181, 0.28);
+  color: var(--color-text-muted);
+  box-shadow: none;
+  opacity: 1;
+}
+
+.panel-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.door-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0;
+  list-style: none;
+}
+
+.door-entry {
+  background: rgba(20, 21, 44, 0.75);
+  border: 1px solid rgba(148, 163, 255, 0.18);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.door-entry .door-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 600;
+}
+
+.door-entry .door-direction {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.door-entry .door-desc {
+  font-size: 0.85rem;
+  color: rgba(232, 233, 255, 0.8);
+}
+
+.door-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.door-actions button {
+  flex: 1;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.6rem;
+}
+
+.door-entry .door-state {
+  font-size: 0.85rem;
+  color: var(--color-highlight);
+}
+
+.door-list .empty {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+.warp-button {
+  width: 100%;
+  margin-top: 0.3rem;
+}
+
 .character-column {
   display: flex;
   flex-direction: column;

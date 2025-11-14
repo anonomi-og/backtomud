@@ -10,6 +10,9 @@ const messagesEl = document.getElementById("messages");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
 const moveButtons = document.querySelectorAll(".movement button");
+const doorListEl = document.getElementById("door-list");
+const warpButton = document.getElementById("warp-button");
+const warpNoteEl = document.getElementById("warp-note");
 const hpEl = document.getElementById("stat-hp");
 const attackBonusEl = document.getElementById("stat-atk");
 const acEl = document.getElementById("stat-ac");
@@ -67,6 +70,7 @@ socket.on("room_state", (data) => {
   roomNameEl.textContent = data.room_name;
   roomDescEl.textContent = data.description;
   coordsEl.textContent = `Position: (${data.x}, ${data.y})`;
+  renderMovementControls(data.exits || {});
 
   playersListEl.innerHTML = "";
   (data.players || []).forEach((name) => {
@@ -81,6 +85,8 @@ socket.on("room_state", (data) => {
   }
   renderMobList(data.mobs || []);
   renderLootList(data.loot || []);
+  renderDoorList(data.doors || []);
+  renderWarpStone(data.warp_stone || null);
 });
 
 socket.on("system_message", (data) => {
@@ -107,6 +113,12 @@ moveButtons.forEach((btn) => {
     socket.emit("move", { direction: dir });
   });
 });
+
+if (warpButton) {
+  warpButton.addEventListener("click", () => {
+    socket.emit("activate_warp");
+  });
+}
 
 // Chat form
 chatForm.addEventListener("submit", (evt) => {
@@ -154,6 +166,20 @@ function renderCharacterPanel(character) {
   renderItemPanel(character.items || []);
 }
 
+function renderMovementControls(exits = {}) {
+  moveButtons.forEach((btn) => {
+    const dir = btn.getAttribute("data-dir");
+    const exitInfo = exits[dir] || {};
+    const canMove = !!exitInfo.available;
+    btn.disabled = !canMove;
+    if (exitInfo.reason) {
+      btn.setAttribute("title", exitInfo.reason);
+    } else {
+      btn.removeAttribute("title");
+    }
+  });
+}
+
 function renderAbilityTable(scores = {}, modifiers = {}) {
   if (!abilityTableBody) return;
   abilityTableBody.innerHTML = "";
@@ -175,6 +201,87 @@ function renderAbilityTable(scores = {}, modifiers = {}) {
     tr.appendChild(modCell);
     abilityTableBody.appendChild(tr);
   });
+}
+
+function renderDoorList(doors = []) {
+  if (!doorListEl) return;
+  doorListEl.innerHTML = "";
+  if (!doors.length) {
+    const li = document.createElement("li");
+    li.textContent = "No doors are within reach.";
+    li.classList.add("empty");
+    doorListEl.appendChild(li);
+    return;
+  }
+
+  doors.forEach((door) => {
+    const li = document.createElement("li");
+    li.classList.add("door-entry");
+
+    const titleRow = document.createElement("div");
+    titleRow.classList.add("door-title");
+    titleRow.textContent = door.name || "Door";
+
+    const stateSpan = document.createElement("span");
+    stateSpan.classList.add("door-state");
+    stateSpan.textContent = door.is_open ? "Open" : "Closed";
+    titleRow.appendChild(stateSpan);
+    li.appendChild(titleRow);
+
+    const directionRow = document.createElement("div");
+    directionRow.classList.add("door-direction");
+    const facingLabel = door.facing ? door.facing.toUpperCase() : null;
+    const destination = door.other_side && door.other_side.room_name ? door.other_side.room_name : "the adjacent room";
+    if (facingLabel) {
+      directionRow.textContent = `Faces ${facingLabel} toward ${destination}.`;
+    } else {
+      directionRow.textContent = `Leads toward ${destination}.`;
+    }
+    li.appendChild(directionRow);
+
+    if (door.description) {
+      const desc = document.createElement("div");
+      desc.classList.add("door-desc");
+      desc.textContent = door.description;
+      li.appendChild(desc);
+    }
+
+    const actions = document.createElement("div");
+    actions.classList.add("door-actions");
+
+    const openButton = document.createElement("button");
+    openButton.textContent = "Open";
+    openButton.disabled = !!door.is_open;
+    openButton.addEventListener("click", () => {
+      socket.emit("door_action", { door_id: door.id, action: "open" });
+    });
+
+    const closeButton = document.createElement("button");
+    closeButton.textContent = "Close";
+    closeButton.disabled = !door.is_open;
+    closeButton.addEventListener("click", () => {
+      socket.emit("door_action", { door_id: door.id, action: "close" });
+    });
+
+    actions.appendChild(openButton);
+    actions.appendChild(closeButton);
+    li.appendChild(actions);
+
+    doorListEl.appendChild(li);
+  });
+}
+
+function renderWarpStone(warpInfo) {
+  if (!warpButton || !warpNoteEl) return;
+  if (warpInfo) {
+    warpButton.hidden = false;
+    warpButton.disabled = false;
+    warpButton.textContent = `Activate ${warpInfo.label || "Warp Stone"}`;
+    warpNoteEl.textContent = warpInfo.description || "A warp stone hums nearby.";
+  } else {
+    warpButton.hidden = true;
+    warpNoteEl.textContent = "No warp stone resonates here.";
+  }
 }
 
 function formatBonus(value) {
