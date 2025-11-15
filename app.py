@@ -2,7 +2,6 @@ import json
 import math
 import os
 import random
-import sqlite3
 import time
 from typing import Optional
 
@@ -11,6 +10,13 @@ from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from flask_socketio import SocketIO, join_room, leave_room, emit, disconnect
 from werkzeug.security import generate_password_hash, check_password_hash
+
+import db_utils
+
+# Database bootstrap:
+#   1. Execute schema_and_seed.sql against your MariaDB instance (e.g. `mysql < schema_and_seed.sql`).
+#   2. Provide DB_HOST, DB_PORT, DB_NAME, DB_USER, and DB_PASSWORD in your .env file.
+#   3. Start the Flask app; all world, mob, and item data will now be read from MariaDB.
 
 try:
     from openai import OpenAI
@@ -30,537 +36,9 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-me-in-prod")
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
-DB_PATH = "game.db"
-
-# --- Multi-zone world definition (grid based maps) ---
+# --- Multi-zone world definition (loaded from MariaDB) ---
 DEFAULT_ZONE = "village"
-VILLAGE_START = (2, 2)
-DUNGEON_1_START = (3, 0)
-DUNGEON_2_START = (4, 0)
-
 MAX_CHARACTERS_PER_ACCOUNT = 3
-
-VILLAGE_MAP = [
-    [
-        {
-            "name": "Northern Gate",
-            "description": "Timber palisades creak while a sentry nods beneath the gate arch. Beyond the arch the trade road stretches north into the frontier, while the village lane bends east toward Merchant Row and south toward the Thatched Cottages; the palisade crowds close along the western wall.",
-        },
-        {
-            "name": "Merchant Row",
-            "description": "Stalls line the street with bolts of cloth and fresh produce neatly displayed. A narrow cart track returns west to the Northern Gate, the shrine's stone steps rise to the east, and a footpath drops south into the Herbalist Garden; the palisade seals away any path to the north.",
-        },
-        {
-            "name": "Shrine Steps",
-            "description": "Stone steps lead to a modest shrine where votive candles gutter in the breeze. The plaza spills west onto Merchant Row, a shadowed watchtower yard waits to the east, and the main thoroughfare continues south toward the Town Hall; the cliff of the palisade blocks any climb northward.",
-        },
-        {
-            "name": "Watchtower Shadow",
-            "description": "The shadow of the wooden watchtower stretches across crates of supplies. Patrol stairs descend west toward the shrine, a service lane leads east toward the crumbling wall, and a ramp descends south into the Storage Barn's yard; the timber barricade hugs the northern edge.",
-        },
-        {
-            "name": "Crumbling Wall",
-            "description": "Weathered masonry from an older fortification lies half-buried in the sod. The watchtower yard lies to the west and the wagon yard spreads to the south, while shattered stone and the outer ditch block passage further north or east.",
-        },
-    ],
-    [
-        {
-            "name": "Thatched Cottages",
-            "description": "Smoke from cookfires drifts lazily above tidy thatched cottages. A muddy lane heads north to the Northern Gate, the herb garden blooms eastward, and baker's apprentices dash south down Baker's Lane; pastures hem in the cottages to the west.",
-        },
-        {
-            "name": "Herbalist Garden",
-            "description": "Raised beds of fragrant herbs attract bees and the occasional wandering villager. Wicker gates swing west toward the thatched cottages, the Town Hall stands east beyond tidy hedges, merchant stalls bustle to the south, and the market road climbs north toward Merchant Row.",
-        },
-        {
-            "name": "Town Hall",
-            "description": "The timbered town hall smells of parchment and warm lamp oil. Stone steps climb north toward the shrine, civic notices point south toward the Village Square, and the public lane angles west into the Herbalist Garden. A thick oak service door with iron bands stands in the east wall, linking the hall to the Storage Barn beyond.",
-        },
-        {
-            "name": "Storage Barn",
-            "description": "Barrels of grain and bundled hay crowd the floor and loft. The watchtower yard opens northward, the wagon yard sprawls to the east, and a work path slopes south toward the Blacksmith Forge. A sturdy service door in the west wall leads back into the Town Hall, its hinges groaning when opened.",
-        },
-        {
-            "name": "Wagon Yard",
-            "description": "Wooden wagons await repair beside piles of seasoned lumber. The crumbling wall looms to the north, the mine entrance waits to the south, and teamsters can retreat west into the Storage Barn while the outer bank blocks travel further east.",
-        },
-    ],
-    [
-        {
-            "name": "Baker's Lane",
-            "description": "Warm smells of bread drift from an open oven while apprentices hurry by. The cottage lane climbs north toward the homesteads, market stalls bustle to the east, and the forest path winds south beneath the trees; stacked wood piles close off the western fence.",
-        },
-        {
-            "name": "Market Stalls",
-            "description": "Vendors haggle over coppers as curious travelers browse their wares. Merchant Row beckons north, the Village Square thrums to the east, the Ancient Well lies down a shaded path to the south, and Baker's Lane curls back to the west.",
-        },
-        {
-            "name": "Village Square",
-            "description": "A cobbled square with a communal well and a notice board layered with fresh ink. The Town Hall towers to the north, the forge blazes to the east, Lakeside Dock extends south, and market stalls throng to the west.",
-        },
-        {
-            "name": "Blacksmith Forge",
-            "description": "Sparks fly from the anvil as the smith hammers glowing iron. The Storage Barn offers supplies to the north, the Old Mine Entrance yawns to the east, Fisher's Hut nestles south along the water, and the Village Square rests to the west.",
-        },
-        {
-            "name": "Old Mine Entrance",
-            "description": "Timber supports frame the old mine entrance where a rune-cut warp stone hums beside the cart tracks. Wagon ruts return north to the yard, the lakefront trail bends south toward an abandoned shed, and the forge's sparks dance to the west while sheer rock prevents travel further east.",
-            "warp_description": "A waist-high warp stone thrums with stored power, waiting for a willing traveler.",
-            "travel_to": {"zone": "dungeon_1", "start": DUNGEON_1_START},
-        },
-    ],
-    [
-        {
-            "name": "Forest Path",
-            "description": "A narrow track winds beneath dark pines east of the village. Baker's Lane lies to the north, the Ancient Well waits to the east, the South Field stretches southward, and the treeline thickens impassably to the west.",
-        },
-        {
-            "name": "Ancient Well",
-            "description": "An ivy-wrapped stone well whispers with echoes from below. Market Stalls bustle to the north, Lakeside Dock creaks to the east, the Hayloft ladder rises to the south, and the forest path circles back west.",
-            "search": {
-                "dc": 11,
-                "ability": "wis",
-                "success_text": "You notice a loose capstone and uncover a forgotten brooch tucked inside.",
-                "failure_text": "Cold water splashes your hands but nothing else reveals itself.",
-                "loot": ["forgotten_brooch"],
-            },
-        },
-        {
-            "name": "Lakeside Dock",
-            "description": "Wooden planks creak as small fishing boats bob against the pilings. The Village Square bustles to the north, Fisher's Hut leans east along the shore, the Sunken Stair descends southward, and the well path loops back west.",
-        },
-        {
-            "name": "Fisher's Hut",
-            "description": "Nets dry on racks beside a cottage that smells strongly of smoked trout. The forge blazes to the north, the abandoned shed lists to the east, Miller's Bridge crosses the millrace to the south, and Lakeside Dock lies to the west.",
-        },
-        {
-            "name": "Abandoned Shed",
-            "description": "Broken tools litter a leaning shed reclaimed by moss. The mine tracks return north, Riverside Grove murmurs to the south, and Fisher's Hut stands to the west while thick bramble chokes the eastern approach.",
-        },
-    ],
-    [
-        {
-            "name": "South Field",
-            "description": "Rows of freshly turned soil promise a hearty autumn harvest. The forest path returns north, the Hayloft beckons east beside the barn, and hedgerows fence off the farmland to the south and west.",
-        },
-        {
-            "name": "Hayloft",
-            "description": "Stacks of hay tower above the barn floor, a favorite hideout for village children. The Ancient Well rests to the north, the Sunken Stair descends east toward the cellar, and the South Field lies to the west while corrals close the way south.",
-        },
-        {
-            "name": "Sunken Stair",
-            "description": "Stone steps descend into a cellar where a crystal-veined warp stone casts steady, cold light. Lakeside Dock rests to the north, Miller's Bridge arches east, the Hayloft is tucked to the west, and packed earth walls bar any southern exit.",
-            "warp_description": "An embedded warp stone glows between the lowest steps, promising passage for those who touch it.",
-            "travel_to": {"zone": "dungeon_2", "start": DUNGEON_2_START},
-        },
-        {
-            "name": "Miller's Bridge",
-            "description": "A wooden bridge spans the millrace, slick with fine spray. Fisher's Hut perches to the north, Riverside Grove rustles to the east, and the Sunken Stair is only a few steps west while foaming water bars travel south.",
-        },
-        {
-            "name": "Riverside Grove",
-            "description": "Tall willows shade a quiet bend in the river where frogs croak at dusk. The abandoned shed leans to the north, Miller's Bridge sits to the west, and the deep river curls around to block any southern or eastern approach.",
-        },
-    ],
-]
-
-DUNGEON_1_MAP = [
-    [
-        {
-            "name": "Sealed Tunnel",
-            "description": "Rockfalls here leave only a narrow crawlspace. A jagged crawl squeezes east toward the Dusty Landing and a cracked slope drops south into the Twisting Hall, while collapsed stone seals the way north and west.",
-        },
-        {
-            "name": "Dusty Landing",
-            "description": "Loose gravel litters the floor where miners once gathered. The crawlspace leads back west to the Sealed Tunnel, stalagmites knife up to the east, and a greasy ramp slides south toward the Rat Warren; the ceiling presses too low to continue north.",
-            "mobs": ["giant_rat"],
-        },
-        {
-            "name": "Stalagmite Cluster",
-            "description": "Jagged pillars create cramped lanes through the cavern. Lantern light glimmers on the Collapsed Entrance to the east, the Dusty Landing lies to the west, and a damp pit yawns south toward the Sunken Den; fallen spires choke off the northern crawl.",
-            "search": {
-                "dc": 12,
-                "ability": "int",
-                "success_text": "You pry apart two stalagmites and find a miner's scribbled map fragment.",
-                "failure_text": "Every crevice looks the same in the dim torchlight.",
-                "loot": ["ancient_coin"],
-            },
-        },
-        {
-            "name": "Collapsed Entrance",
-            "description": "Splintered beams circle a collapsed shaft where a cracked warp stone glows amid the rubble. The rubble slope leads west toward the stalagmite cluster, a narrow chute dives east, and the Broken Cart chamber lies directly south. The warp stone hums with power for those returning to the village above.",
-            "warp_description": "A chipped warp stone flickers here, still strong enough to return travelers to the village.",
-            "travel_to": {"zone": "village", "start": VILLAGE_START},
-        },
-        {
-            "name": "Rubble Chute",
-            "description": "Fresh stones tumble occasionally from the sloped ceiling. The Collapsed Entrance rests to the west, the Echoing Gallery opens eastward, and pungent fungal growth spreads south into the grotto while unstable debris blocks any path north.",
-        },
-        {
-            "name": "Echoing Gallery",
-            "description": "Footsteps clap back in a chorus of hollow echoes. The rubble chute narrows to the west, the Dripping Alcove glistens to the east, and a cold underground brook courses south; the ceiling squeezes low to the north.",
-        },
-        {
-            "name": "Dripping Alcove",
-            "description": "Mineral-heavy droplets patter into a shallow basin. Echoing passages return west, slick stairs spiral south toward the lower levels, and the alcove dead-ends against sheer rock to the east and north.",
-        },
-    ],
-    [
-        {
-            "name": "Twisting Hall",
-            "description": "Passages coil like a knot, worn smooth by decades of traffic. The Sealed Tunnel lies to the north, vermin tunnels wriggle east toward the Rat Warren, and a rubble slide drops south into a collapsed shaft while the western wall remains sealed.",
-            "mobs": ["giant_rat"],
-        },
-        {
-            "name": "Rat Warren",
-            "description": "Nests of frayed rope and cloth rustle with vermin. The Dusty Landing opens to the north, the Sunken Den reeks to the east, and a whispering junction lies south; gnawed stone limits movement back west to the twisting hall.",
-            "mobs": ["giant_rat", "giant_rat"],
-        },
-        {
-            "name": "Sunken Den",
-            "description": "Moisture collects in a low pit surrounded by gnawed bones. The stalagmite cluster looms to the north, a broken ore cart lies to the east, goblin sentries muster to the south, and the rat warrens open to the west.",
-        },
-        {
-            "name": "Broken Cart",
-            "description": "A splintered ore cart lies on its side, spilling rusted tools. The collapsed entrance glows to the north, fungal terraces shimmer to the east, goblin fields extend south, and the sunken den rests to the west.",
-        },
-        {
-            "name": "Fungus Grotto",
-            "description": "Bioluminescent caps cast a ghostly glow over the cavern. The rubble chute feeds spores from the north, an underground brook courses east, a guard post waits to the south, and the broken cart chamber lies to the west.",
-            "mobs": ["giant_rat"],
-        },
-        {
-            "name": "Underground Brook",
-            "description": "An icy stream carves a shallow trench through the stone. Echoes tumble from the gallery to the north, slick steps descend east, abandoned barracks huddle to the south, and the fungus grotto glows to the west.",
-        },
-        {
-            "name": "Slick Steps",
-            "description": "A carved stairway descends deeper, slick with condensation. The dripping alcove is just north, the underground brook winds to the west, and a shimmering pool lies directly south while crumbling rock blocks any path eastward.",
-        },
-    ],
-    [
-        {
-            "name": "Collapsed Shaft",
-            "description": "The remnants of a vertical shaft are choked with rubble. Twisting passages climb north, a whispering fork opens east, and a bone-strewn pit falls away to the south while the western wall remains buried.",
-        },
-        {
-            "name": "Whispering Fork",
-            "description": "Whispers ride the draft, hinting at unseen side passages. Rat tunnels emerge from the north, a goblin outpost stands to the east, collapsed dormitories stretch south, and the shaft rubble presses close to the west.",
-        },
-        {
-            "name": "Goblin Outpost",
-            "description": "Makeshift barricades guard a cluster of stolen crates. The sunken den growls to the north, fungal farms expand eastward, a makeshift shrine flickers to the south, and the whispering fork provides a western retreat.",
-            "mobs": ["goblin", "goblin"],
-        },
-        {
-            "name": "Fungal Farms",
-            "description": "Rows of edible fungus grow in carefully scraped troughs. Goblin outposts bustle to the west, a guard post holds watch to the east, the overseer chamber looms south, and the broken cart room is only a stair north.",
-            "mobs": ["goblin"],
-        },
-        {
-            "name": "Guard Post",
-            "description": "A pair of overturned barrels serve as a crude lookout. Spore fields lie to the west, abandoned barracks slump to the east, goblin farmers labor northward, and drills echo from the hall to the south.",
-            "mobs": ["goblin"],
-        },
-        {
-            "name": "Abandoned Barracks",
-            "description": "Rotten bedrolls and broken spears lie scattered across the floor. The underground brook murmurs to the north, a shimmering pool gleams to the east, the crystal vein tunnels run south, and the guard post watches from the west.",
-            "search": {
-                "dc": 13,
-                "ability": "wis",
-                "success_text": "Beneath a cot you discover a goblin bugle wrapped in cloth.",
-                "failure_text": "Only moldy blankets and stale air greet your search.",
-                "loot": ["goblin_bugle"],
-            },
-        },
-        {
-            "name": "Shimmering Pool",
-            "description": "Still water reflects the cavern roof like polished glass. Slick steps climb north, a vent shaft plunges south, and abandoned barracks lie to the west while crystal-studded walls block the eastern edge.",
-        },
-    ],
-    [
-        {
-            "name": "Bone Pile",
-            "description": "Heap of cracked bones crunch underfoot. Rubble passages climb north to the collapsed shaft, a ruined dormitory slumps east, and molten heat rises from a lava fissure to the south while the western face is sealed.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Collapsed Dormitory",
-            "description": "Splintered bunks sag beneath a partial ceiling collapse. Whispering passages return north, a makeshift shrine glows to the east, a chasm edge yawns south, and the bone pile lies to the west.",
-        },
-        {
-            "name": "Makeshift Shrine",
-            "description": "Charred sigils mark a shrine to a forgotten subterranean spirit. Goblin sentries watch from the north, the overseer chamber stands eastward, a fortified guardroom waits to the south, and collapsed dormitories slump to the west.",
-            "search": {
-                "dc": 14,
-                "ability": "wis",
-                "success_text": "Behind the altar you uncover a pouch of ancient coins.",
-                "failure_text": "The shrine offers only dust and unsettling whispers.",
-                "loot": ["ancient_coin"],
-            },
-        },
-        {
-            "name": "Overseer Chamber",
-            "description": "A carved desk and ledger hint at the mine's orderly past. Fungal farms line the northern balcony, the drill hall roars to the east, supply depots extend south, and the shrine's altar stands to the west.",
-            "mobs": ["goblin"],
-        },
-        {
-            "name": "Drill Hall",
-            "description": "Rusted drills and chains litter this wide chamber. Guard posts hold the northern arch, a crystal vein sparkles to the east, a trophy chamber stands to the south, and the overseer chamber commands the west.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Crystal Vein",
-            "description": "Chunks of quartz jut from the walls, catching stray light. Abandoned barracks loom to the north, a vent shaft gusts eastward, hidden workshops wait to the south, and the drill hall rattles to the west.",
-        },
-        {
-            "name": "Vent Shaft",
-            "description": "A narrow chimney breathes cool air from unseen depths. The shimmering pool lies to the north, the lower spiral plunges south, and crystal veins glitter to the west while the eastern wall remains sheer.",
-        },
-    ],
-    [
-        {
-            "name": "Lava Fissure",
-            "description": "A faint red glow issues from a crack radiating gentle heat. The bone pile rises to the north, a chasm edge stretches east, and molten rock bars any passage further south or west.",
-        },
-        {
-            "name": "Chasm Edge",
-            "description": "A sheer drop-off disappears into rumbling darkness. Collapsed dormitories lie to the north, a deep guardroom holds the eastern ledge, and the lava fissure glows to the west while the abyss blocks the southern path.",
-        },
-        {
-            "name": "Deep Guardroom",
-            "description": "Barricades of scavenged timber block an advance deeper inside. The makeshift shrine flickers northward, the supply depot stacks to the east, and the chasm edge yawns to the west while darkness falls away to the south.",
-            "mobs": ["kobold", "kobold"],
-        },
-        {
-            "name": "Supply Depot",
-            "description": "Shelves of pilfered supplies are kept in meticulous order. Overseer chambers rise to the north, trophy racks gleam to the east, deep guardrooms stand to the west, and the floor drops sharply to the south.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Trophy Chamber",
-            "description": "Tattered banners and trophies from surface raids hang proudly. Drill halls ring just north, a hidden workshop clatters to the east, and the supply depot borders to the west while the cavern wall seals the southern edge.",
-            "search": {
-                "dc": 15,
-                "ability": "int",
-                "success_text": "You catalogue the trophies and spot a gleaming ceremonial dagger hidden away.",
-                "failure_text": "Your fingers brush dusty trophies but no hidden prizes.",
-                "loot": ["kobold_sling"],
-            },
-        },
-        {
-            "name": "Hidden Workshop",
-            "description": "Tools for trap making lie scattered across stone benches. Crystal veins shimmer to the north, the lower spiral descends eastward, and the trophy chamber sits to the west while the southern rock wall is unyielding.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Lower Spiral",
-            "description": "A tight spiral stair descends into silent blackness. The vent shaft exhales cool air from the north, the hidden workshop adjoins to the west, and sheer stone seals the south and east.",
-        },
-    ],
-]
-
-DUNGEON_2_MAP = [
-    [
-        {
-            "name": "Iridescent Approach",
-            "description": "Rainbow motes drift through the humid entrance hall. Glittering runoff flows to the east, the Singing Cavern hums to the south, and jagged crystal walls prevent any retreat to the north or west.",
-        },
-        {
-            "name": "Glittering Runoff",
-            "description": "Streams of mineral-laden water shimmer like liquid glass. The approach opens west, shattered columns topple to the east, and a stair spirals south toward Echo Falls while crystal-crusted walls block the northern face.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Shattered Column",
-            "description": "Crystal shards jut from a toppled pillar. Glittering runoff pools to the west, the Crystal Gate rises to the east, and the Kobold Watchpost waits down a ramp to the south while the ceiling presses low overhead.",
-        },
-        {
-            "name": "Crystal Gate",
-            "description": "A lattice of quartz bars blocks the path and glows softly. Shattered columns lie to the west, the prismatic vestibule beams to the east, and the gate itself seals the northern archway while the Crystal Gate Lattice bars passage south toward the Shimmer Forge.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Prismatic Vestibule",
-            "description": "Spectral light spills from a pedestal where a faceted warp stone rotates slowly in mid-air. The Crystal Gate gleams to the west, a cliffside overlook stretches east, and gemcutters labor to the south while the cavern roof seals the north.",
-            "warp_description": "The suspended warp stone pulses invitingly, ready to fold space back to Greyford Village.",
-            "travel_to": {"zone": "village", "start": VILLAGE_START},
-        },
-        {
-            "name": "Facet Overlook",
-            "description": "A ledge overlooks a crystalline canyon humming with resonance. The vestibule shimmers to the west, luminous cradles glow to the east, and a maze of mirrors coils south while sheer drops guard the north.",
-            "search": {
-                "dc": 14,
-                "ability": "int",
-                "success_text": "You chip free a flawless crystal teardrop wedged in the rock.",
-                "failure_text": "Your tools slip, sending shards tinkling into the abyss.",
-                "loot": ["crystal_teardrop"],
-            },
-        },
-        {
-            "name": "Luminous Cradle",
-            "description": "Nestled geodes emit a gentle violet glow. The overlook lies to the west, a fractured ramp angles eastward, and glowing barracks bustle to the south while the ceiling vaults high above.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Fractured Ramp",
-            "description": "A sloping ramp splits, descending toward resonant caverns. Luminous nests lie to the west, the rune circle glows below to the south, and splintered stone denies travel north or east.",
-        },
-    ],
-    [
-        {
-            "name": "Singing Cavern",
-            "description": "Every step sets the crystals humming in delicate harmony. The iridescent approach opens north, Echo Falls roars to the east, and azure hollows widen to the south while the western wall remains untouched.",
-            "search": {
-                "dc": 13,
-                "ability": "wis",
-                "success_text": "Listening carefully, you find a hidden alcove containing a crystal teardrop.",
-                "failure_text": "The echoes overwhelm your senses, masking any secrets.",
-                "loot": ["crystal_teardrop"],
-            },
-        },
-        {
-            "name": "Echo Falls",
-            "description": "A waterfall cascades through crystalline prisms, scattering light. Glittering runoff pours from the north, the Kobold Watchpost crouches to the east, and chittering warrens stretch south while the cascade forms a barrier to the west.",
-        },
-        {
-            "name": "Kobold Watchpost",
-            "description": "Kobolds have carved slits into the wall for hidden crossbows. Shattered columns rise to the north, the Shimmer Forge blazes to the east, moonstone chambers lie to the south, and Echo Falls thunders to the west.",
-            "mobs": ["kobold", "kobold"],
-        },
-        {
-            "name": "Shimmer Forge",
-            "description": "Forges burn with blue fire, shaping crystal arrowheads. The Kobold Watchpost guards the western arch, Gemcutter's Bench hums to the east, icy crevasses sink to the south, and the Crystal Gate Lattice looms along the northern doorway, usually sealed against intruders.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Gemcutter's Bench",
-            "description": "Polishing wheels spin, leaving glittering dust across the stone. The prismatic vestibule hovers to the north, the crystal maze reflects to the east, guardian constructs muster to the south, and the forge's sparks fly to the west.",
-            "search": {
-                "dc": 15,
-                "ability": "int",
-                "success_text": "You collect a pouch of finely cut shards before the dust settles.",
-                "failure_text": "Your hands come away empty but sparkling with grit.",
-                "loot": ["crystal_teardrop"],
-            },
-        },
-        {
-            "name": "Crystal Maze",
-            "description": "Mirrored walls create bewildering reflections of yourself. The overlook beckons north, glowing barracks lie to the east, resonant vaults hum to the south, and gemcutters labor to the west.",
-        },
-        {
-            "name": "Glowing Barracks",
-            "description": "Sleeping pallets surround lanterns filled with glowing moss. Luminous cradles rest to the north, the rune circle shimmers to the east, crystal nurseries lie to the south, and the maze's reflections are to the west.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Rune Circle",
-            "description": "A circle of runes thrums with latent power. The fractured ramp descends from the north, the veiled passage winds south, and glowing barracks anchor the western edge while cracked stone blocks the eastern cliff.",
-        },
-    ],
-    [
-        {
-            "name": "Azure Hollow",
-            "description": "Blue quartz formations twist like frozen waves. Singing Cavern harmonics spill from the north, chittering warrens coil to the east, and violet depths plunge south while the western wall gleams unbroken.",
-        },
-        {
-            "name": "Chittering Warrens",
-            "description": "Narrow burrows ring with the chatter of unseen kobolds. Echo Falls echoes to the north, Moonstone Chamber glows to the east, Hoard Gallery stretches south, and Azure Hollow opens west.",
-            "mobs": ["kobold", "kobold"],
-        },
-        {
-            "name": "Moonstone Chamber",
-            "description": "Soft white light spills from polished moonstones embedded in the floor. The Kobold Watchpost stands to the north, an icy crevasse chills the east, Geode Sanctum gleams to the south, and the warrens chatter to the west.",
-            "search": {
-                "dc": 14,
-                "ability": "wis",
-                "success_text": "You locate a concealed niche holding an untouched moonstone shard.",
-                "failure_text": "Reflections play tricks on your eyes, hiding any clues.",
-                "loot": ["crystal_teardrop"],
-            },
-        },
-        {
-            "name": "Icy Crevasse",
-            "description": "Cold vapors billow from a deep crack rimed with frost. The Shimmer Forge smolders to the north, guardian constructs await to the east, the Glinting Archive lies south, and moonstones glow to the west.",
-        },
-        {
-            "name": "Guardian Nexus",
-            "description": "Crystal sentries loom over a dais carved with warding sigils. Gemcutter's Bench is to the north, the resonant vault hums eastward, the Crystal Throne commands the south, and icy fissures chill the west.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Resonant Vault",
-            "description": "The air vibrates with a constant low hum that prickles your teeth. The crystal maze reflects to the north, crystal nurseries brood to the east, the ritual pool lies to the south, and guardian sentries stand to the west.",
-            "mobs": ["goblin"],
-        },
-        {
-            "name": "Crystal Nursery",
-            "description": "Small geodes cradle faintly glowing eggs. Glowing barracks bustle to the north, the veiled passage drifts east, darkened faults rumble south, and the resonant vault hums to the west.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Veiled Passage",
-            "description": "Veils of hanging crystals sway gently in the draft. The rune circle is to the north, the collapsed escape slumps south, and crystal nurseries shimmer to the west while an abyss blocks the eastern rim.",
-        },
-    ],
-    [
-        {
-            "name": "Violet Depth",
-            "description": "Deep amethyst crystals pulse with a slow, steady light. Azure hollow corridors rise to the north, hoarded spoils lie to the east, and a sheer drop bars travel further south or west.",
-        },
-        {
-            "name": "Hoard Gallery",
-            "description": "Neat piles of sorted gemstones testify to recent raids. Chittering warrens open to the north, the Geode Sanctum glitters to the east, and violet depths border the west while the floor falls away to the south.",
-            "mobs": ["kobold"],
-        },
-        {
-            "name": "Geode Sanctum",
-            "description": "A titanic geode splits open, revealing a hollow filled with riches. Moonstone chambers gleam to the north, the Glinting Archive stores records to the east, and the Hoard Gallery rests to the west while the southern wall remains sealed.",
-            "search": {
-                "dc": 16,
-                "ability": "int",
-                "success_text": "You pry loose a rare heartstone from the geode's core.",
-                "failure_text": "The crystalline lattice refuses to part under your efforts.",
-                "loot": ["crystal_heartstone"],
-            },
-        },
-        {
-            "name": "Glinting Archive",
-            "description": "Shelves of crystal tablets refract the light into rainbow sigils. The Icy Crevasse chills the north, the Crystal Throne commands the east, and the Geode Sanctum lines the west while silence hangs over the southern descent.",
-        },
-        {
-            "name": "Crystal Throne",
-            "description": "An ornate seat of quartz watches over the chamber like a judge. Guardian sentries stand to the north, the ritual pool mirrors to the east, the Glinting Archive holds records to the west, and basalt walls bar any southern route.",
-            "mobs": ["kobold", "kobold"],
-        },
-        {
-            "name": "Ritual Pool",
-            "description": "A still pool mirrors the ceiling perfectly despite the cavern's breeze. The resonant vault hums to the north, the darkened fault rumbles to the east, and the Crystal Throne gleams to the west while underground currents seal the south.",
-        },
-        {
-            "name": "Darkened Fault",
-            "description": "Shadowed cracks hint at deeper tunnels still unexplored. Crystal nurseries line the north, the collapsed escape slumps to the east, and the ritual pool shines to the west while the ground fractures into impassable darkness southward.",
-            "mobs": ["goblin"],
-        },
-        {
-            "name": "Collapsed Escape",
-            "description": "A former exit lies sealed by a recent cave-in. The veiled passage whispers to the north, the darkened fault borders west, and shattered rock walls block all hope of moving south or east.",
-        },
-    ],
-]
-
-
-def make_world(name, tile_map, start):
-    height = len(tile_map)
-    width = len(tile_map[0]) if height else 0
-    return {"name": name, "map": tile_map, "start": start, "width": width, "height": height}
-
-
-WORLDS = {
-    "village": make_world("Greyford Village", VILLAGE_MAP, VILLAGE_START),
-    "dungeon_1": make_world("Old Mine", DUNGEON_1_MAP, DUNGEON_1_START),
-    "dungeon_2": make_world("Crystal Depths", DUNGEON_2_MAP, DUNGEON_2_START),
-}
 
 DIRECTION_VECTORS = {
     "north": (0, -1),
@@ -627,155 +105,6 @@ PROFICIENCY_BONUS = 2  # SRD level 1 characters
 BASE_ACTION_COOLDOWN = 1.0  # baseline delay between rate-limited actions
 MIN_ACTION_MULTIPLIER = 0.75
 MAX_ACTION_MULTIPLIER = 1.25
-
-WEAPONS = {
-    "unarmed": {"name": "Unarmed Strike", "dice": (1, 1), "ability": "str", "damage_type": "bludgeoning"},
-    "longsword": {"name": "Longsword", "dice": (1, 8), "ability": "str", "damage_type": "slashing"},
-    "battleaxe": {"name": "Battleaxe", "dice": (1, 8), "ability": "str", "damage_type": "slashing"},
-    "spear": {"name": "Spear", "dice": (1, 6), "ability": "str", "damage_type": "piercing"},
-    "shortsword": {"name": "Shortsword", "dice": (1, 6), "ability": "dex", "damage_type": "piercing"},
-    "dagger": {"name": "Dagger", "dice": (1, 4), "ability": "dex", "damage_type": "piercing"},
-    "shortbow": {"name": "Shortbow", "dice": (1, 6), "ability": "dex", "damage_type": "piercing"},
-    "mace": {"name": "Mace", "dice": (1, 6), "ability": "str", "damage_type": "bludgeoning"},
-    "warhammer": {"name": "Warhammer", "dice": (1, 8), "ability": "str", "damage_type": "bludgeoning"},
-    "arcane_bolt": {"name": "Arcane Bolt", "dice": (1, 8), "ability": "int", "damage_type": "force"},
-    "sacred_flame": {"name": "Sacred Flame", "dice": (1, 8), "ability": "wis", "damage_type": "radiant"},
-}
-
-GENERAL_ITEMS = {
-    "rat_tail": {
-        "name": "Rat Tail Token",
-        "description": "A grisly token proving your victory over a giant rat.",
-        "rarity": "common",
-    },
-    "goblin_bugle": {
-        "name": "Goblin Bugle",
-        "description": "A dented horn used to rally goblins. It no longer sounds quite right.",
-        "rarity": "common",
-    },
-    "kobold_sling": {
-        "name": "Kobold Sling",
-        "description": "A worn leather sling sized for small hands. Still functional.",
-        "rarity": "common",
-    },
-    "forgotten_brooch": {
-        "name": "Forgotten Brooch",
-        "description": "A tarnished family brooch depicting the village crest.",
-        "rarity": "common",
-    },
-    "ancient_coin": {
-        "name": "Ancient Mine Coin",
-        "description": "An old silver coin stamped with a miner's pick emblem.",
-        "rarity": "uncommon",
-    },
-    "crystal_teardrop": {
-        "name": "Crystal Teardrop",
-        "description": "A flawless droplet of crystal that glows faintly when held.",
-        "rarity": "uncommon",
-    },
-    "crystal_heartstone": {
-        "name": "Crystal Heartstone",
-        "description": "A rare heartstone that pulses with inner light from the crystal depths.",
-        "rarity": "rare",
-    },
-}
-
-MOB_TEMPLATES = {
-    "giant_rat": {
-        "name": "Giant Rat",
-        "ac": 12,
-        "hp": 7,
-        "hp_dice": "2d6",
-        "speed": 30,
-        "abilities": {"str": 7, "dex": 15, "con": 11, "int": 2, "wis": 10, "cha": 4},
-        "attack_bonus": 4,
-        "damage": {"dice": (1, 4), "bonus": 2, "type": "piercing"},
-        "attack_interval": 2.5,
-        "initiative": 12,
-        "behaviour_type": "aggressive",
-        "xp": 25,
-        "initial_spawns": 2,
-        "gold_range": (1, 6),
-        "loot": [("rat_tail", 0.6)],
-        "description": "A sewer-dwelling rat the size of a hound, eyes gleaming with hunger.",
-    },
-    "goblin": {
-        "name": "Goblin",
-        "ac": 15,
-        "hp": 7,
-        "hp_dice": "2d6",
-        "speed": 30,
-        "abilities": {"str": 8, "dex": 14, "con": 10, "int": 10, "wis": 8, "cha": 8},
-        "attack_bonus": 4,
-        "damage": {"dice": (1, 6), "bonus": 2, "type": "slashing"},
-        "attack_interval": 3.0,
-        "initiative": 11,
-        "behaviour_type": "defensive",
-        "xp": 50,
-        "initial_spawns": 2,
-        "gold_range": (2, 12),
-        "loot": [("goblin_bugle", 0.4), ("dagger", 0.2)],
-        "description": "A wiry goblin clutching rusted blades and muttering in guttural tones.",
-    },
-    "kobold": {
-        "name": "Kobold",
-        "ac": 12,
-        "hp": 5,
-        "hp_dice": "2d6-2",
-        "speed": 30,
-        "abilities": {"str": 7, "dex": 15, "con": 9, "int": 8, "wis": 7, "cha": 8},
-        "attack_bonus": 4,
-        "damage": {"dice": (1, 4), "bonus": 2, "type": "piercing"},
-        "attack_interval": 2.8,
-        "initiative": 13,
-        "behaviour_type": "aggressive",
-        "xp": 25,
-        "initial_spawns": 2,
-        "gold_range": (1, 8),
-        "loot": [("kobold_sling", 0.5)],
-        "description": "A scaly kobold scouting the area with wary, darting eyes.",
-    },
-    "npc_elder_mara": {
-        "name": "Elder Mara",
-        "ac": 13,
-        "hp": 24,
-        "speed": 25,
-        "abilities": {"str": 9, "dex": 11, "con": 12, "int": 14, "wis": 15, "cha": 16},
-        "attack_bonus": 4,
-        "damage": {"dice": (1, 6), "bonus": 2, "type": "bludgeoning"},
-        "attack_interval": 3.6,
-        "initiative": 10,
-        "behaviour_type": "defensive",
-        "xp": 0,
-        "gold_range": (0, 0),
-        "loot": [],
-        "description": "The village elder, leaning on a rune-carved staff yet keen-eyed and alert.",
-    },
-}
-
-NPC_TEMPLATES = {
-    "elder_mara": {
-        "name": "Elder Mara",
-        "mob_template": "npc_elder_mara",
-        "zone": "village",
-        "coords": (2, 2),
-        "bio": (
-            "A seasoned rune-keeper who shepherds Dawnfell Village and remembers the warpstone routes of old."
-        ),
-        "personality": "warm, patient, and quietly amused by youthful bravado",
-        "facts": [
-            "Dawnfell Village was rebuilt atop an abandoned teleport nexus, and the warp stones reawakened only a generation ago.",
-            "Merchants and adventurers gather in the Village Square before venturing toward the mines or river routes.",
-            "The town hall's clerks can mark safe paths to the Sunken Stair if you ask respectfully.",
-            "Warp stones require calm focus—touch the rune and picture the destination to travel.",
-            "The Old Mine Entrance houses the nearest warp stone leading to the first dungeon."
-        ],
-        "secret_fact": (
-            "A hidden warp stone shard rests beneath the shrine steps; six sincere visits awaken it as a shortcut to the Sunken Stair."
-        ),
-        "aliases": ["mara", "elder", "elder mara", "elder_mara"],
-    }
-}
 
 NPC_SECRET_THRESHOLD = 5
 NPC_MODEL_NAME = os.environ.get("OPENAI_NPC_MODEL", "gpt-4o-mini")
@@ -949,10 +278,43 @@ def normalize_choice(value, valid, default_value):
     return default_value
 
 
+def _weapon_template_map():
+    return db_utils.get_weapon_templates()
+
+
+def _general_item_template_map():
+    return db_utils.get_general_item_templates()
+
+
+def parse_damage_dice(notation):
+    if not notation:
+        return (1, 1)
+    try:
+        count_str, size_str = notation.lower().split("d", 1)
+        return (int(count_str or 1), int(size_str))
+    except (ValueError, AttributeError):
+        return (1, 1)
+
+
 def get_weapon(key):
-    if not key:
-        return WEAPONS[DEFAULT_WEAPON_KEY]
-    return WEAPONS.get(key, WEAPONS[DEFAULT_WEAPON_KEY])
+    templates = _weapon_template_map()
+    record = templates.get(key) or templates.get(DEFAULT_WEAPON_KEY)
+    if not record:
+        raise RuntimeError("Default weapon template is missing from the database")
+    ability = "str"
+    metadata = record.get("consumable_effect_json")
+    if metadata:
+        try:
+            ability = json.loads(metadata).get("ability", "str")
+        except (TypeError, json.JSONDecodeError):
+            ability = "str"
+    dice = parse_damage_dice(record.get("damage_dice"))
+    return {
+        "name": record.get("name", key or DEFAULT_WEAPON_KEY),
+        "dice": dice,
+        "ability": ability,
+        "damage_type": record.get("damage_type", "physical"),
+    }
 
 
 def format_weapon_payload(key):
@@ -996,10 +358,12 @@ def deserialize_inventory(payload):
     try:
         data = json.loads(payload)
         if isinstance(data, list):
-            return [item for item in data if item in WEAPONS]
+            templates = _weapon_template_map()
+            return [item for item in data if item in templates]
     except (json.JSONDecodeError, TypeError):
         pass
-    return [part.strip() for part in str(payload).split(",") if part.strip() in WEAPONS]
+    templates = _weapon_template_map()
+    return [part.strip() for part in str(payload).split(",") if part.strip() in templates]
 
 
 def serialize_items(items):
@@ -1010,18 +374,21 @@ def deserialize_items(payload):
     if not payload:
         return []
     if isinstance(payload, list):
-        return [item for item in payload if item in GENERAL_ITEMS]
+        templates = _general_item_template_map()
+        return [item for item in payload if item in templates]
     try:
         data = json.loads(payload)
         if isinstance(data, list):
-            return [item for item in data if item in GENERAL_ITEMS]
+            templates = _general_item_template_map()
+            return [item for item in data if item in templates]
     except (json.JSONDecodeError, TypeError):
         pass
-    return [part.strip() for part in str(payload).split(",") if part.strip() in GENERAL_ITEMS]
+    templates = _general_item_template_map()
+    return [part.strip() for part in str(payload).split(",") if part.strip() in templates]
 
 
 def format_item_payload(key):
-    item = GENERAL_ITEMS.get(key)
+    item = db_utils.get_item_template(key)
     if not item:
         return None
     return {
@@ -1103,14 +470,14 @@ def build_character_sheet(race_choice, class_choice, base_scores=None):
 
 
 def derive_character_from_record(record):
-    race = normalize_choice(record.get("race"), RACES, DEFAULT_RACE)
-    char_class = normalize_choice(record.get("char_class"), CLASSES, DEFAULT_CLASS)
+    race = normalize_choice(record.get("species") or record.get("race"), RACES, DEFAULT_RACE)
+    char_class = normalize_choice(record.get("class") or record.get("char_class"), CLASSES, DEFAULT_CLASS)
     class_data = CLASSES[char_class]
     abilities = {ability: record.get(f"{ability}_score") or 10 for ability in ABILITY_KEYS}
     ability_mods = {ability: ability_modifier(score) for ability, score in abilities.items()}
-    proficiency = PROFICIENCY_BONUS
+    proficiency = record.get("proficiency_bonus") or PROFICIENCY_BONUS
     ac = max(10 + ability_mods["dex"] + class_data.get("armor_bonus", 0), 10)
-    max_hp = record.get("hp") or max(class_data["hit_die"] + ability_mods["con"], 1)
+    max_hp = record.get("max_hp") or record.get("hp") or max(class_data["hit_die"] + ability_mods["con"], 1)
     inventory = deserialize_inventory(record.get("weapon_inventory"))
     if not inventory:
         inventory = default_inventory_for_class(char_class)
@@ -1134,7 +501,7 @@ def derive_character_from_record(record):
         "inventory": inventory,
         "equipped_weapon": weapon["key"],
         "xp": record.get("xp") or 0,
-        "gold": record.get("gold") or 0,
+        "gold": record.get("coin_gp") or record.get("gold") or 0,
         "items": items,
     }
 
@@ -1160,331 +527,193 @@ def roll_dice(dice):
 
 # --- DB helpers ---
 
-def _table_exists(cursor, table):
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        (table,),
-    )
-    return cursor.fetchone() is not None
-
-
-def _column_exists(cursor, table, column):
-    cursor.execute(f"PRAGMA table_info({table})")
-    return any(row[1] == column for row in cursor.fetchall())
 
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
+    """Ensure the MariaDB connection is available and seed mobs on startup."""
 
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS accounts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-        """
-    )
-
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS characters (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_id INTEGER NOT NULL,
-            name TEXT UNIQUE NOT NULL,
-            race TEXT,
-            char_class TEXT,
-            level INTEGER DEFAULT 1,
-            str_score INTEGER,
-            dex_score INTEGER,
-            con_score INTEGER,
-            int_score INTEGER,
-            wis_score INTEGER,
-            cha_score INTEGER,
-            hp INTEGER,
-            current_hp INTEGER,
-            equipped_weapon TEXT,
-            weapon_inventory TEXT,
-            xp INTEGER DEFAULT 0,
-            gold INTEGER DEFAULT 0,
-            item_inventory TEXT,
-            bio TEXT,
-            description TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
-        );
-        """
-    )
-
-    for column, default in (
-        ("bio", ""),
-        ("description", ""),
-    ):
-        if not _column_exists(c, "characters", column):
-            default_literal = "''" if default == "" else f"'{default}'"
-            c.execute(
-                f"ALTER TABLE characters ADD COLUMN {column} TEXT DEFAULT {default_literal}"
-            )
-
-    if _table_exists(c, "users"):
-        c.execute("SELECT COUNT(*) FROM accounts")
-        if (c.fetchone() or [0])[0] == 0:
-            c.execute("SELECT * FROM users")
-            legacy_rows = c.fetchall()
-            for row in legacy_rows:
-                username = row["username"]
-                password_hash = row["password_hash"]
-                c.execute(
-                    "INSERT OR IGNORE INTO accounts (username, password_hash) VALUES (?, ?)",
-                    (username, password_hash),
-                )
-                c.execute("SELECT id FROM accounts WHERE username = ?", (username,))
-                account_row = c.fetchone()
-                if not account_row:
-                    continue
-                account_id = account_row["id"]
-                char_name = username
-                inventory = deserialize_inventory(row["weapon_inventory"])
-                if not inventory:
-                    inventory = default_inventory_for_class(row["char_class"] or DEFAULT_CLASS)
-                equipped_weapon = ensure_equipped_weapon(row["equipped_weapon"], inventory)
-                items = deserialize_items(row["item_inventory"])
-                c.execute(
-                    """
-                    INSERT OR IGNORE INTO characters (
-                        account_id, name, race, char_class, level,
-                        str_score, dex_score, con_score, int_score, wis_score, cha_score,
-                        hp, current_hp, equipped_weapon, weapon_inventory,
-                        xp, gold, item_inventory, bio, description
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        account_id,
-                        char_name,
-                        row["race"] or DEFAULT_RACE,
-                        row["char_class"] or DEFAULT_CLASS,
-                        row["level"] or 1,
-                        row["str_score"] or 10,
-                        row["dex_score"] or 10,
-                        row["con_score"] or 10,
-                        row["int_score"] or 10,
-                        row["wis_score"] or 10,
-                        row["cha_score"] or 10,
-                        row["hp"] or 10,
-                        row["current_hp"] or row["hp"] or 10,
-                        equipped_weapon,
-                        serialize_inventory(inventory),
-                        row["xp"] or 0,
-                        row["gold"] or 0,
-                        serialize_items(items),
-                        "",
-                        "",
-                    ),
-                )
-
-    conn.commit()
-    conn.close()
+    try:
+        db_utils.fetch_one("SELECT 1 AS ok")
+    except Exception as exc:
+        raise RuntimeError("Unable to connect to the game database") from exc
     if not mobs:
         spawn_initial_mobs()
 
 
 def get_account(username):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM accounts WHERE username = ?", (username,))
-    row = c.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    return db_utils.fetch_one("SELECT * FROM accounts WHERE username = :username", username=username)
 
 
 def get_account_by_id(account_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
-    row = c.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    return db_utils.fetch_one("SELECT * FROM accounts WHERE account_id = :account_id", account_id=account_id)
 
 
 def create_account(username, password):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
     password_hash = generate_password_hash(password)
-    c.execute(
-        "INSERT INTO accounts (username, password_hash) VALUES (?, ?)",
-        (username, password_hash),
+    return db_utils.insert_and_return_id(
+        "INSERT INTO accounts (username, password_hash) VALUES (:username, :password_hash)",
+        username=username,
+        password_hash=password_hash,
     )
-    conn.commit()
-    conn.close()
 
 
 def count_account_characters(account_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM characters WHERE account_id = ?", (account_id,))
-    count = c.fetchone()[0]
-    conn.close()
-    return count
+    row = db_utils.fetch_one(
+        "SELECT COUNT(*) AS total FROM characters WHERE account_id = :account_id",
+        account_id=account_id,
+    )
+    return int(row.get("total", 0)) if row else 0
 
 
 def get_account_characters(account_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute(
-        "SELECT * FROM characters WHERE account_id = ? ORDER BY created_at",
-        (account_id,),
+    rows = db_utils.fetch_all(
+        "SELECT * FROM characters WHERE account_id = :account_id ORDER BY created_at",
+        account_id=account_id,
     )
-    rows = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return rows
+    return [normalize_character_record(row) for row in rows]
 
 
 def get_character_by_id(character_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM characters WHERE id = ?", (character_id,))
-    row = c.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    record = db_utils.fetch_one(
+        "SELECT * FROM characters WHERE character_id = :character_id",
+        character_id=character_id,
+    )
+    return normalize_character_record(record)
 
 
 def get_character_by_name(name):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM characters WHERE name = ?", (name,))
-    row = c.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    record = db_utils.fetch_one(
+        "SELECT * FROM characters WHERE name = :name",
+        name=name,
+    )
+    return normalize_character_record(record)
 
 
-def create_character(
-    account_id,
-    name,
-    race_choice,
-    class_choice,
-    ability_scores,
-    bio="",
-    description="",
-):
+def create_character(account_id, name, race_choice, class_choice, ability_scores, bio="", description=""):
     sheet = build_character_sheet(race_choice, class_choice, base_scores=ability_scores)
     ability_values = sheet["abilities"]
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute(
+    start_zone = DEFAULT_ZONE
+    start_x, start_y = get_world_start(start_zone)
+    room_record = db_utils.get_room_by_coords(start_zone, start_x, start_y)
+    current_room_id = room_record.get("room_id") if room_record else None
+    inventory_payload = serialize_inventory(sheet["inventory"])
+    character_id = db_utils.insert_and_return_id(
         """
         INSERT INTO characters (
-            account_id, name, race, char_class, level,
+            account_id, name, species, `class`, level, xp, current_room_id, last_zone_id,
             str_score, dex_score, con_score, int_score, wis_score, cha_score,
-            hp, current_hp, equipped_weapon, weapon_inventory,
-            xp, gold, item_inventory, bio, description
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            proficiency_bonus, max_hp, current_hp, armor_class, initiative_mod, speed_walk,
+            equipped_weapon, weapon_inventory, item_inventory, bio, description, coin_gp
+        ) VALUES (
+            :account_id, :name, :species, :char_class, :level, 0, :current_room_id, :last_zone_id,
+            :str_score, :dex_score, :con_score, :int_score, :wis_score, :cha_score,
+            :proficiency_bonus, :max_hp, :current_hp, :armor_class, :initiative_mod, :speed_walk,
+            :equipped_weapon, :weapon_inventory, :item_inventory, :bio, :description, 0
+        )
         """,
-        (
-            account_id,
-            name,
-            sheet["race"],
-            sheet["char_class"],
-            sheet["level"],
-            ability_values["str"],
-            ability_values["dex"],
-            ability_values["con"],
-            ability_values["int"],
-            ability_values["wis"],
-            ability_values["cha"],
-            sheet["max_hp"],
-            sheet["current_hp"],
-            sheet["equipped_weapon"],
-            serialize_inventory(sheet["inventory"]),
-            0,
-            0,
-            serialize_items([]),
-            bio or "",
-            description or "",
-        ),
+        account_id=account_id,
+        name=name,
+        species=sheet["race"],
+        char_class=sheet["char_class"],
+        level=sheet["level"],
+        current_room_id=current_room_id,
+        last_zone_id=start_zone,
+        str_score=ability_values["str"],
+        dex_score=ability_values["dex"],
+        con_score=ability_values["con"],
+        int_score=ability_values["int"],
+        wis_score=ability_values["wis"],
+        cha_score=ability_values["cha"],
+        proficiency_bonus=sheet["proficiency"],
+        max_hp=sheet["max_hp"],
+        current_hp=sheet["current_hp"],
+        armor_class=sheet["ac"],
+        initiative_mod=sheet["ability_mods"]["dex"],
+        speed_walk=30,
+        equipped_weapon=sheet["equipped_weapon"],
+        weapon_inventory=inventory_payload,
+        item_inventory=serialize_items([]),
+        bio=bio or "",
+        description=description or "",
     )
-    conn.commit()
-    conn.close()
+    return character_id
 
 
 def delete_character(account_id, character_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute(
-        "DELETE FROM characters WHERE id = ? AND account_id = ?",
-        (character_id, account_id),
+    affected = db_utils.execute(
+        "DELETE FROM characters WHERE character_id = :character_id AND account_id = :account_id",
+        character_id=character_id,
+        account_id=account_id,
     )
-    deleted = c.rowcount
-    conn.commit()
-    conn.close()
-    return deleted > 0
+    return affected > 0
 
 
 def update_character_current_hp(character_id, hp):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute(
-        "UPDATE characters SET current_hp = ? WHERE id = ?",
-        (hp, character_id),
+    db_utils.execute(
+        "UPDATE characters SET current_hp = :hp, last_saved_at = CURRENT_TIMESTAMP WHERE character_id = :character_id",
+        hp=int(hp),
+        character_id=character_id,
     )
-    conn.commit()
-    conn.close()
 
 
 def update_character_equipped_weapon(character_id, weapon_key):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute(
-        "UPDATE characters SET equipped_weapon = ? WHERE id = ?",
-        (weapon_key, character_id),
+    db_utils.execute(
+        "UPDATE characters SET equipped_weapon = :weapon_key, last_saved_at = CURRENT_TIMESTAMP WHERE character_id = :character_id",
+        weapon_key=weapon_key,
+        character_id=character_id,
     )
-    conn.commit()
-    conn.close()
 
 
 def update_character_weapon_inventory(character_id, inventory):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute(
-        "UPDATE characters SET weapon_inventory = ? WHERE id = ?",
-        (serialize_inventory(inventory), character_id),
+    db_utils.execute(
+        "UPDATE characters SET weapon_inventory = :inventory, last_saved_at = CURRENT_TIMESTAMP WHERE character_id = :character_id",
+        inventory=serialize_inventory(inventory),
+        character_id=character_id,
     )
-    conn.commit()
-    conn.close()
 
 
 def update_character_gold(character_id, gold):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE characters SET gold = ? WHERE id = ?", (gold, character_id))
-    conn.commit()
-    conn.close()
+    db_utils.execute(
+        "UPDATE characters SET coin_gp = :gold, last_saved_at = CURRENT_TIMESTAMP WHERE character_id = :character_id",
+        gold=int(gold),
+        character_id=character_id,
+    )
 
 
 def update_character_xp(character_id, xp):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE characters SET xp = ? WHERE id = ?", (xp, character_id))
-    conn.commit()
-    conn.close()
+    db_utils.execute(
+        "UPDATE characters SET xp = :xp, last_saved_at = CURRENT_TIMESTAMP WHERE character_id = :character_id",
+        xp=int(xp),
+        character_id=character_id,
+    )
 
 
 def update_character_items(character_id, items):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute(
-        "UPDATE characters SET item_inventory = ? WHERE id = ?",
-        (serialize_items(items), character_id),
+    db_utils.execute(
+        "UPDATE characters SET item_inventory = :items, last_saved_at = CURRENT_TIMESTAMP WHERE character_id = :character_id",
+        items=serialize_items(items),
+        character_id=character_id,
     )
-    conn.commit()
-    conn.close()
+
+
+
+# Normalization helpers ----------------------------------------------------
+
+def normalize_character_record(record):
+    if not record:
+        return None
+    normalized = dict(record)
+    if "character_id" in normalized:
+        normalized.setdefault("id", normalized["character_id"])
+    if "species" in normalized:
+        normalized.setdefault("race", normalized["species"])
+    if "class" in normalized:
+        normalized.setdefault("char_class", normalized["class"])
+    if "max_hp" in normalized:
+        normalized.setdefault("hp", normalized["max_hp"])
+    if "coin_gp" in normalized:
+        normalized.setdefault("gold", normalized["coin_gp"])
+    return normalized
 # --- In-memory game state (per container, MVP only) ---
 # players[character_name] = {
 #     "sid": socket_id,
@@ -1576,20 +805,29 @@ _loot_counter = 0
 
 
 def get_world(zone):
-    return WORLDS.get(zone, WORLDS[DEFAULT_ZONE])
+    world = db_utils.get_world(zone)
+    if world:
+        return world
+    fallback = db_utils.get_world(DEFAULT_ZONE)
+    if fallback:
+        return fallback
+    return {"zone_id": DEFAULT_ZONE, "map": [], "width": 0, "height": 0, "start": (0, 0)}
 
 
 def get_world_dimensions(zone):
     world = get_world(zone)
-    return world["width"], world["height"]
+    return world.get("width", 0), world.get("height", 0)
 
 
 def get_world_map(zone):
-    return get_world(zone)["map"]
+    return get_world(zone).get("map", [])
 
 
 def get_world_start(zone):
-    return get_world(zone)["start"]
+    start = get_world(zone).get("start")
+    if isinstance(start, (list, tuple)) and len(start) == 2:
+        return tuple(start)
+    return (0, 0)
 
 
 def get_door_id(zone, x, y, direction):
@@ -1675,9 +913,9 @@ def room_name(zone, x, y):
 
 
 def get_room_info(zone, x, y):
-    width, height = get_world_dimensions(zone)
-    if 0 <= x < width and 0 <= y < height:
-        return get_world_map(zone)[y][x]
+    payload = db_utils.get_room_payload(zone, x, y)
+    if payload:
+        return payload
     return {"name": "Unknown void", "description": "You should not be here."}
 
 
@@ -1736,68 +974,115 @@ def roll_hit_points_from_notation(notation, fallback):
     return max(1, total)
 
 
+
 def spawn_mob(template_key, x=None, y=None, zone=None):
-    template = MOB_TEMPLATES.get(template_key)
-    if not template:
+    record = db_utils.get_mob_template(template_key)
+    if not record:
         return None
     global _mob_counter
     zone = zone or DEFAULT_ZONE
     if x is None or y is None:
         x, y = random_world_position(zone)
+    room_record = db_utils.get_room_by_coords(zone, x, y)
+    room_id = room_record.get("room_id") if room_record else None
     _mob_counter += 1
-    hp = roll_hit_points_from_notation(template.get("hp_dice"), template.get("hp", 1))
+    notes = record.get("notes") or {}
+    hp = roll_hit_points_from_notation(record.get("hp_dice"), record.get("hp_average") or 1)
     mob_id = f"{template_key}-{_mob_counter}"
+    abilities = {
+        "str": record.get("str_score", 10) or 10,
+        "dex": record.get("dex_score", 10) or 10,
+        "con": record.get("con_score", 10) or 10,
+        "int": record.get("int_score", 10) or 10,
+        "wis": record.get("wis_score", 10) or 10,
+        "cha": record.get("cha_score", 10) or 10,
+    }
+    damage_info = notes.get("damage") if isinstance(notes, dict) else None
+    if damage_info and isinstance(damage_info.get("dice"), list):
+        damage_info = {
+            **damage_info,
+            "dice": tuple(damage_info.get("dice") or (1, 4)),
+        }
+    loot_table = notes.get("loot") if isinstance(notes, dict) else []
+    description = ""
+    traits_json = record.get("traits_json")
+    if traits_json:
+        try:
+            traits = json.loads(traits_json)
+            if isinstance(traits, list) and traits:
+                description = traits[0].get("description", "")
+        except (TypeError, json.JSONDecodeError):
+            description = str(traits_json)
     mob = {
         "id": mob_id,
         "template": template_key,
-        "name": template.get("name", template_key.title()),
+        "name": record.get("name", template_key.title()),
         "zone": zone,
         "x": x,
         "y": y,
-        "ac": template.get("ac", 10),
+        "room_id": room_id,
+        "ac": record.get("armor_class", 10),
         "hp": hp,
         "max_hp": hp,
-        "attack_interval": template.get("attack_interval", 3.0),
+        "attack_interval": record.get("attack_interval", 3.0),
         "last_attack_ts": 0,
-        "initiative": template.get("initiative", 10),
-        "behaviour_type": template.get("behaviour_type", "defensive"),
-        "xp": template.get("xp", 0),
-        "description": template.get("description", ""),
-        "abilities": template.get("abilities", {}),
-        "gold_range": template.get("gold_range", (0, 0)),
-        "loot": list(template.get("loot", [])),
-        "contributions": {},
+        "initiative": 10 + (record.get("initiative_mod") or 0),
+        "behaviour_type": record.get("aggro_type", "defensive"),
+        "xp": record.get("xp_value", 0),
+        "description": description,
+        "abilities": abilities,
+        "gold_range": tuple(notes.get("gold_range", (0, 0))) if isinstance(notes, dict) else (0, 0),
+        "loot": list(loot_table),
+        "damage": None,
+        "attack_bonus": notes.get("attack_bonus", 0) if isinstance(notes, dict) else 0,
         "alive": True,
-        "in_combat": False,
-        "combat_targets": set(),
-        "combat_task": None,
     }
+    if damage_info:
+        mob["damage"] = {
+            "dice": damage_info.get("dice", (1, 4)),
+            "bonus": damage_info.get("bonus", 0),
+            "type": damage_info.get("type", "physical"),
+        }
     mobs[mob_id] = mob
+    db_utils.create_mob_instance_record(template_key, room_id, mob.get("hp"))
     return mob
 
 
-def spawn_npc_instance(npc_key):
-    info = NPC_TEMPLATES.get(npc_key)
-    if not info:
+
+
+def spawn_npc_instance(npc_key, spawn_record=None):
+    record = db_utils.get_npc_template(npc_key)
+    if not record:
         return None
     existing_id = npcs.get(npc_key)
     if existing_id:
         existing = mobs.get(existing_id)
         if existing and existing.get("alive"):
             return existing
-    template_key = info.get("mob_template")
-    coords = info.get("coords", (0, 0))
-    zone = info.get("zone", DEFAULT_ZONE)
+    if spawn_record is None:
+        spawn_record = db_utils.get_npc_spawn(npc_key)
+    if not spawn_record:
+        return None
+    coords = (spawn_record.get("x_coord", 0), spawn_record.get("y_coord", 0))
+    zone = spawn_record.get("zone_id", DEFAULT_ZONE)
+    traits_json = record.get("traits_json")
+    traits = {}
+    if traits_json:
+        try:
+            traits = json.loads(traits_json)
+        except (TypeError, json.JSONDecodeError):
+            traits = {}
+    template_key = traits.get("mob_template") or f"npc_{npc_key}"
     mob = spawn_mob(template_key, coords[0], coords[1], zone)
     if not mob:
         return None
     mob["is_npc"] = True
     mob["npc_key"] = npc_key
-    mob["npc_bio"] = info.get("bio", "")
-    mob["npc_personality"] = info.get("personality", "")
-    mob["npc_facts"] = list(info.get("facts", []))
-    mob["npc_secret_fact"] = info.get("secret_fact")
-    mob["npc_aliases"] = list(info.get("aliases", []))
+    mob["npc_bio"] = traits.get("bio", "")
+    mob["npc_personality"] = traits.get("personality", "")
+    mob["npc_facts"] = list(traits.get("facts", []))
+    mob["npc_secret_fact"] = traits.get("secret_fact")
+    mob["npc_aliases"] = list(traits.get("aliases", []))
     npcs[npc_key] = mob["id"]
     npc_lookup_by_id[mob["id"]] = npc_key
     return mob
@@ -1806,29 +1091,24 @@ def spawn_npc_instance(npc_key):
 def spawn_initial_npcs():
     npcs.clear()
     npc_lookup_by_id.clear()
-    for npc_key in NPC_TEMPLATES.keys():
+    spawn_map = {}
+    for zone in db_utils.list_zone_ids():
+        for record in db_utils.get_room_npc_spawns(zone):
+            spawn_map[record["npc_template_id"]] = record
+    for npc_key, spawn in spawn_map.items():
         npc_conversations.setdefault(npc_key, {})
-        mob = spawn_npc_instance(npc_key)
+        mob = spawn_npc_instance(npc_key, spawn)
         if not mob:
             continue
-
-
-def respawn_npc_after_delay(npc_key, delay=60):
-    socketio.sleep(delay)
-    mob = spawn_npc_instance(npc_key)
-    if not mob:
-        return
-    zone = mob.get("zone", DEFAULT_ZONE)
-    x, y = mob.get("x"), mob.get("y")
-    broadcast_room_state(zone, x, y)
-
-
 def spawn_initial_mobs():
     mobs.clear()
-    for zone, world in WORLDS.items():
-        tile_map = world["map"]
+    for zone in db_utils.list_zone_ids():
+        world = get_world(zone)
+        tile_map = world.get("map", [])
         for y, row in enumerate(tile_map):
             for x, tile in enumerate(row):
+                if not tile:
+                    continue
                 for template_key in tile.get("mobs", []):
                     spawn_mob(template_key, x, y, zone)
     spawn_initial_npcs()
@@ -2241,7 +1521,7 @@ def generate_loot_entry_gold(amount):
 def generate_loot_entry_item(item_key):
     global _loot_counter
     _loot_counter += 1
-    item = GENERAL_ITEMS.get(item_key) or WEAPONS.get(item_key)
+    item = db_utils.get_item_template(item_key) or _weapon_template_map().get(item_key)
     name = item.get("name", item_key.title()) if item else item_key.title()
     description = item.get("description", "") if item else "An unidentified item."
     return {
@@ -2981,23 +2261,25 @@ def award_xp(username, amount):
         if record is None:
             return
         new_total = (record.get("xp") or 0) + amount
-        update_character_xp(record["id"], new_total)
+        update_character_xp(record["character_id"], new_total)
 
 
 def collect_item_for_player(player, username, item_key):
     if not item_key:
         return None
-    if item_key in GENERAL_ITEMS:
+    item_template = db_utils.get_item_template(item_key)
+    if item_template:
         items = player.setdefault("items", [])
         items.append(item_key)
         update_character_items(player["character_id"], items)
-        return GENERAL_ITEMS[item_key]["name"]
-    if item_key in WEAPONS:
+        return item_template.get("name", item_key.replace("_", " ").title())
+    weapon_template = _weapon_template_map().get(item_key)
+    if weapon_template:
         inventory = player.setdefault("inventory", [])
         if item_key not in inventory:
             inventory.append(item_key)
             update_character_weapon_inventory(player["character_id"], inventory)
-        return WEAPONS[item_key]["name"]
+        return weapon_template.get("name", item_key.replace("_", " ").title())
     items = player.setdefault("items", [])
     items.append(item_key)
     update_character_items(player["character_id"], items)
@@ -3135,18 +2417,20 @@ def pickup_loot(username, loot_identifier):
         message = f"{username} scoops up {amount} gold coins."
     else:
         item_key = match.get("item_key")
-        if item_key in GENERAL_ITEMS:
+        template = db_utils.get_item_template(item_key)
+        weapon_template = _weapon_template_map().get(item_key)
+        if template:
             items = player.setdefault("items", [])
             items.append(item_key)
             update_character_items(player["character_id"], items)
-            item_name = GENERAL_ITEMS[item_key]["name"]
+            item_name = template.get("name", match.get("name", item_key.replace("_", " ").title()))
             message = f"{username} picks up {item_name}."
-        elif item_key in WEAPONS:
+        elif weapon_template:
             inventory = player.setdefault("inventory", [])
             if item_key not in inventory:
                 inventory.append(item_key)
                 update_character_weapon_inventory(player["character_id"], inventory)
-            item_name = WEAPONS[item_key]["name"]
+            item_name = weapon_template.get("name", match.get("name", item_key.replace("_", " ").title()))
             message = f"{username} claims {item_name}."
         else:
             items = player.setdefault("items", [])
@@ -3334,7 +2618,7 @@ def login():
                 flash("Invalid username or password.")
                 return redirect(url_for("login"))
             session.clear()
-            session["account_id"] = account["id"]
+            session["account_id"] = account["account_id"]
             session["account_username"] = account["username"]
             return redirect(url_for("character_select"))
 
@@ -3442,7 +2726,7 @@ def play_character(character_id):
     if not record or record["account_id"] != session["account_id"]:
         flash("Character not found.")
         return redirect(url_for("character_select"))
-    session["character_id"] = record["id"]
+    session["character_id"] = record["character_id"]
     session["character_name"] = record["name"]
     session.pop("rolled_scores", None)
     existing = players.get(record["name"])
@@ -3540,7 +2824,7 @@ def on_join_game():
         state["searched_rooms"] = set(existing.get("searched_rooms", set()))
         recalculate_player_stats(state)
 
-    state["character_id"] = record["id"]
+    state["character_id"] = record["character_id"]
     state["account_id"] = account_id
     state["name"] = record["name"]
     players[character_name] = state
@@ -3569,9 +2853,11 @@ def handle_travel_portal(username):
     if not travel:
         return False
     target_zone = travel.get("zone")
-    if not target_zone or target_zone not in WORLDS:
+    if not target_zone:
         return False
     target_world = get_world(target_zone)
+    if not target_world or not target_world.get("map"):
+        return False
     destination = travel.get("start")
     if isinstance(destination, (list, tuple)) and len(destination) == 2:
         tx, ty = destination

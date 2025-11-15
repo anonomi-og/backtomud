@@ -3,3 +3,5 @@ flask-socketio==5.3.6
 eventlet==0.36.1
 openai>=1.17.0
 python-dotenv>=1.0.1
+SQLAlchemy>=2.0.0
+PyMySQL>=1.1.0
