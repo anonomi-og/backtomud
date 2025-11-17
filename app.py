@@ -742,6 +742,7 @@ mobs = {}
 npcs = {}
 npc_lookup_by_id = {}
 npc_conversations = {}
+npc_conversation_history = {}
 _openai_client: Optional[object] = None
 _openai_mode: Optional[str] = None
 
@@ -1078,8 +1079,10 @@ def spawn_npc_instance(npc_key, spawn_record=None):
         return None
     mob["is_npc"] = True
     mob["npc_key"] = npc_key
+    mob["npc_character_description"] = traits.get("character_description", "")
     mob["npc_bio"] = traits.get("bio", "")
     mob["npc_personality"] = traits.get("personality", "")
+    mob["npc_fixed_memory"] = list(traits.get("fixed_memory", []))
     mob["npc_facts"] = list(traits.get("facts", []))
     mob["npc_secret_fact"] = traits.get("secret_fact")
     mob["npc_aliases"] = list(traits.get("aliases", []))
@@ -1091,12 +1094,14 @@ def spawn_npc_instance(npc_key, spawn_record=None):
 def spawn_initial_npcs():
     npcs.clear()
     npc_lookup_by_id.clear()
+    npc_conversation_history.clear()
     spawn_map = {}
     for zone in db_utils.list_zone_ids():
         for record in db_utils.get_room_npc_spawns(zone):
             spawn_map[record["npc_template_id"]] = record
     for npc_key, spawn in spawn_map.items():
         npc_conversations.setdefault(npc_key, {})
+        npc_conversation_history.setdefault(npc_key, [])
         mob = spawn_npc_instance(npc_key, spawn)
         if not mob:
             continue
@@ -1185,7 +1190,8 @@ def ensure_openai_client():
 
 
 def build_npc_knowledge(mob, conversation_count):
-    knowledge = list(mob.get("npc_facts", []))
+    knowledge = list(mob.get("npc_fixed_memory", []))
+    knowledge.extend(mob.get("npc_facts", []))
     secret = mob.get("npc_secret_fact")
     if secret and conversation_count > NPC_SECRET_THRESHOLD:
         knowledge.append(secret)
@@ -1199,7 +1205,9 @@ def generate_npc_response(mob, player, message, conversation_count):
 
     npc_name = mob.get("name", "The villager")
     persona = mob.get("npc_personality", "friendly")
+    character_description = mob.get("npc_character_description", "")
     bio = mob.get("npc_bio", "a notable resident of Dawnfell Village")
+    npc_key = mob.get("npc_key")
     knowledge = build_npc_knowledge(mob, conversation_count)
     knowledge_text = "\n".join(f"- {fact}" for fact in knowledge) if knowledge else "- (No stored facts.)"
     player_name = player.get("name") or "An adventurer"
@@ -1215,9 +1223,13 @@ def generate_npc_response(mob, player, message, conversation_count):
     player_bio = player.get("bio") or "No personal biography provided."
     player_description = player.get("description") or ""
     conversation_line = f"You have spoken with this adventurer {conversation_count} times."
+    history_entries = npc_conversation_history.get(npc_key, [])[-15:] if npc_key else []
+    history_lines = [f"{entry.get('speaker', 'Someone')}: {entry.get('text', '')}" for entry in history_entries]
+    history_text = "\n".join(history_lines) if history_lines else "(No recent conversation. Begin warmly.)"
     instructions = (
-        f"You are {npc_name}, {bio}. Speak in a {persona} tone. Stay in character and use the knowledge provided. "
-        "Offer guidance about Dawnfell Village and warp stones when it fits the conversation. If a question exceeds your knowledge, admit uncertainty."
+        f"You are {npc_name}. {character_description} {bio}. Speak in a {persona} tone. "
+        "Stay in character and use the knowledge provided. Offer guidance about Dawnfell Village and warp stones when it fits the conversation. "
+        "If a question exceeds your knowledge, admit uncertainty."
     )
     player_context_lines = [
         f"Adventurer summary: {player_summary}.",
@@ -1230,6 +1242,7 @@ def generate_npc_response(mob, player, message, conversation_count):
         {"role": "system", "content": instructions},
         {"role": "system", "content": conversation_line},
         {"role": "system", "content": "Knowledge available to you:\n" + knowledge_text},
+        {"role": "system", "content": "Recent short-term memory (most recent last):\n" + history_text},
         {"role": "system", "content": "Respond in 1-3 short paragraphs."},
         {"role": "user", "content": f"{player_context}\nPlayer says: {message}"},
     ]
@@ -1363,6 +1376,11 @@ def handle_talk_command(username, raw_args):
         {"from": npc["name"], "text": reply},
         room=room,
     )
+    history = npc_conversation_history.setdefault(npc_key, [])
+    history.append({"speaker": username, "text": message, "role": "player"})
+    history.append({"speaker": npc.get("name", "The NPC"), "text": reply, "role": "npc"})
+    if len(history) > 15:
+        npc_conversation_history[npc_key] = history[-15:]
     send_room_state(username)
     return True, reply
 
